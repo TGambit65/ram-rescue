@@ -25,6 +25,128 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 }
 
+# ---------------------------------------------------------------- CLI
+HOTKEY_ACCEL=""
+DO_BIND_HOTKEY=0
+
+usage() {
+  cat <<'EOF'
+Usage: install.sh [options]
+
+Options:
+  --bind-hotkey[=ACCEL]   After install, bind a GNOME keyboard shortcut to
+                          launch the overlay (kill picker). ACCEL defaults to
+                          "Super+R". Other examples: "Ctrl+Alt+R",
+                          "Super+Escape", or raw GTK format like "<Super>r".
+                          Currently GNOME-only — silently skipped elsewhere.
+  -h, --help              This message
+EOF
+}
+
+parse_args() {
+  while (($# > 0)); do
+    case "$1" in
+      --bind-hotkey)
+        DO_BIND_HOTKEY=1
+        HOTKEY_ACCEL="Super+R"
+        ;;
+      --bind-hotkey=*)
+        DO_BIND_HOTKEY=1
+        HOTKEY_ACCEL="${1#--bind-hotkey=}"
+        ;;
+      -h | --help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown flag: $1 (try --help)"
+        ;;
+    esac
+    shift
+  done
+}
+
+# Convert "Super+R" / "Ctrl+Alt+R" / "Super+Escape" → GTK accelerator format.
+# Passes through anything already in <Modifier>key form.
+normalize_accel() {
+  local input="$1"
+  if [[ "$input" == \<* ]]; then
+    echo "$input"
+    return
+  fi
+  local IFS='+'
+  read -ra parts <<<"$input"
+  local out="" i p last_idx
+  last_idx=$((${#parts[@]} - 1))
+  for i in "${!parts[@]}"; do
+    p="${parts[$i]}"
+    if ((i == last_idx)); then
+      # Final key: single letter → lowercase; named keys (Escape, F1...) → as-is.
+      if ((${#p} == 1)); then
+        out+="${p,,}"
+      else
+        out+="$p"
+      fi
+    else
+      case "${p,,}" in
+        super | meta | win | windows) out+="<Super>" ;;
+        ctrl | control)               out+="<Control>" ;;
+        alt)                          out+="<Alt>" ;;
+        shift)                        out+="<Shift>" ;;
+        *)                            out+="<$p>" ;;
+      esac
+    fi
+  done
+  echo "$out"
+}
+
+# Bind a custom GNOME keyboard shortcut to `ram-rescue overlay`.
+# Idempotent: re-running with a different accel just updates the existing
+# ram-rescue entry; doesn't disturb other custom keybindings.
+bind_hotkey() {
+  local accel="$1"
+  local normalized
+  normalized=$(normalize_accel "$accel")
+
+  case "${XDG_CURRENT_DESKTOP:-}" in
+    *GNOME* | *Unity*) ;;
+    *)
+      warn "Hotkey binding via gsettings is only supported on GNOME-based desktops."
+      warn "Bind '${LOCAL_BIN}/ram-rescue overlay' to a key manually via your DE's settings."
+      return 0
+      ;;
+  esac
+
+  if ! command -v gsettings >/dev/null 2>&1; then
+    warn "gsettings not found — skipping hotkey binding."
+    return 0
+  fi
+
+  local kb_path="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ram-rescue/"
+  local schema="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$kb_path"
+
+  # Append to the existing list of custom-keybinding paths if not already present.
+  local current new_list
+  current=$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings)
+  if [[ "$current" == *"$kb_path"* ]]; then
+    say "Hotkey path already registered — updating binding."
+  else
+    if [[ "$current" == "@as []" || "$current" == "[]" ]]; then
+      new_list="['$kb_path']"
+    else
+      # current looks like "['path1', 'path2']" — strip trailing ']' and append.
+      new_list="${current%]}, '$kb_path']"
+    fi
+    gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$new_list"
+  fi
+
+  gsettings set "$schema" name 'ram-rescue overlay'
+  gsettings set "$schema" command "$LOCAL_BIN/ram-rescue overlay"
+  gsettings set "$schema" binding "$normalized"
+
+  say "Bound $normalized to 'ram-rescue overlay'."
+}
+
 # ---------------------------------------------------------------- preflight
 preflight() {
   say "Preflight checks..."
@@ -122,16 +244,22 @@ verify() {
 }
 
 # ---------------------------------------------------------------- main
+parse_args "$@"
 preflight
 locate_source
 install_files
 activate
 verify
 
+if ((DO_BIND_HOTKEY)); then
+  bind_hotkey "$HOTKEY_ACCEL"
+fi
+
 printf '\n\033[1;32mInstalled.\033[0m\n\n'
 cat <<EOF
 Quick test:        ram-rescue test
 Show status:       ram-rescue status
+Open kill picker:  ram-rescue overlay   (or your bound hotkey)
 Tail logs:         ram-rescue logs
 Configure:         \$EDITOR $CONFIG_DIR/config
 Uninstall:         ram-rescue uninstall

@@ -4,6 +4,19 @@ All notable changes to ram-rescue will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.1] — 2026-05-23
+
+`--bind-hotkey` flag on the Linux installer — set up the overlay keyboard shortcut without leaving the terminal.
+
+### Added
+- **`./linux/install.sh --bind-hotkey[=ACCEL]`**: binds a GNOME custom keyboard shortcut to `ram-rescue overlay`. `ACCEL` defaults to `Super+R`. Accepts human-friendly forms (`Super+R`, `Ctrl+Alt+R`, `Super+Escape`) or raw GTK accelerator format (`<Super>r`, `<Control><Alt>r`). The top-level dispatcher `install.sh` forwards the flag through.
+- Hotkey binding via `gsettings` is idempotent: re-running with a different accel updates the existing entry without duplicating, and other custom keybindings are preserved.
+- Uninstall (both `ram-rescue uninstall` and `linux/uninstall.sh`) now removes the hotkey entry from `custom-keybindings` and resets its properties — no dangling shortcut left behind.
+
+### Notes
+- GNOME / Unity only. On KDE / XFCE / MATE the flag prints a warning and skips silently (those DEs have their own hotkey systems; binding via shell is harder to do reliably).
+- The "Bind locally now" gsettings recipe used in v0.4.0 prep still works for ad-hoc / non-installer use.
+
 ## [0.4.0] — 2026-05-23
 
 Hotkey-launched kill picker (Linux). Prototype using zenity.

@@ -177,14 +177,29 @@ ram-rescue help                This message
 
 The `overlay` subcommand opens a zenity checklist of all running apps, lets you tick the ones to close, confirms, then sends SIGTERM to each. Closes itself when done.
 
-**Bind to a GNOME keyboard shortcut:**
+**Bind a hotkey at install time (GNOME):**
+
+```bash
+./linux/install.sh --bind-hotkey            # binds Super+R (default)
+./linux/install.sh --bind-hotkey=Ctrl+Alt+R # any combo you want
+```
+
+For `curl | bash` users, the flag works through the dispatcher too:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TGambit65/ram-rescue/main/install.sh | bash -s -- --bind-hotkey
+```
+
+Accepted accelerator formats: `Super+R`, `Ctrl+Alt+R`, `Super+Escape`, or raw GTK form `<Super>r`. Other DEs (KDE / XFCE / MATE) print a warning and skip — bind manually via the DE's keyboard settings.
+
+**Bind manually (any DE):**
 
 1. Settings → Keyboard → View and Customize Shortcuts → Custom Shortcuts → `+`
 2. Name: `ram-rescue overlay`
-3. Command: `/home/YOUR_USER/.local/bin/ram-rescue overlay` (use the full path — GNOME's shortcut runner doesn't always inherit your PATH)
-4. Shortcut: pick anything (suggestion: `Super+R`)
+3. Command: `/home/YOUR_USER/.local/bin/ram-rescue overlay` (full path — DE shortcut runners often don't inherit `PATH`)
+4. Shortcut: pick anything (`Super+R` recommended)
 
-Now `Super+R` (or whatever you chose) anywhere on the desktop opens the picker.
+Now `Super+R` (or whatever you chose) anywhere on the desktop opens the picker. Uninstall removes the binding automatically.
 
 ### RAM cost — honest numbers
 

@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-VERSION="0.4.0"
+VERSION="0.4.1"
 PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/ram-rescue"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ram-rescue"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/ram-rescue"
@@ -126,11 +126,26 @@ cmd_logs() {
   journalctl --user -t ram-rescue -n "$n" --no-pager
 }
 
+unbind_hotkey() {
+  local kb_path="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/ram-rescue/"
+  command -v gsettings >/dev/null 2>&1 || return 0
+  local current
+  current=$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings 2>/dev/null || echo "@as []")
+  [[ "$current" != *"$kb_path"* ]] && return 0
+
+  echo "Removing ram-rescue hotkey binding..."
+  gsettings reset-recursively "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$kb_path" 2>/dev/null || true
+  local new_list
+  new_list=$(echo "$current" | sed "s|, *'$kb_path'||g; s|'$kb_path', *||g; s|'$kb_path'||g; s|\[ *\]|@as []|")
+  gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$new_list" 2>/dev/null || true
+}
+
 cmd_uninstall() {
   echo "Uninstalling ram-rescue..."
   systemctl --user disable --now ram-rescue.timer 2>/dev/null || true
   rm -f "$SYSTEMD_USER_DIR/ram-rescue.timer" "$SYSTEMD_USER_DIR/ram-rescue.service"
   systemctl --user daemon-reload
+  unbind_hotkey
   rm -rf "$PREFIX"
   rm -f "$HOME/.local/bin/ram-rescue"
   echo "Removed timer, service, scripts, and CLI link."
