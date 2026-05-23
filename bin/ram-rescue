@@ -88,12 +88,29 @@ set_quiet_window() {
 }
 
 # ---------------------------------------------------------------- top consumers
+# Aggregates RSS by command name and prints top 5. Single awk invocation
+# (no internal pipeline) so `set -o pipefail` can't trip on SIGPIPE from head.
 top_consumers() {
-  ps -eo comm,rss --sort=-rss --no-headers |
-    awk '{a[$1]+=$2} END {for(k in a) printf "%d %s\n", a[k], k}' |
-    sort -rn |
-    head -5 |
-    awk '{printf "  %-22s %5d MB\n", $2, int($1/1024)}'
+  ps -eo comm,rss --no-headers | awk '
+    { a[$1] += $2 }
+    END {
+      n = 0
+      for (k in a) keys[n++] = k
+      # Insertion-sort by total RSS desc — fine for ~200 procs
+      for (i = 1; i < n; i++) {
+        cur = keys[i]
+        j = i - 1
+        while (j >= 0 && a[keys[j]] < a[cur]) {
+          keys[j+1] = keys[j]
+          j--
+        }
+        keys[j+1] = cur
+      }
+      lim = (n < 5) ? n : 5
+      for (i = 0; i < lim; i++)
+        printf "  %-22s %5d MB\n", keys[i], int(a[keys[i]]/1024)
+    }
+  '
 }
 
 # ---------------------------------------------------------------- alert
@@ -109,9 +126,11 @@ fire_alert() {
   fi
 
   # notify-send --wait blocks until the notification is closed.
-  # If an action button is clicked, its key is printed on stdout.
-  # If the notification times out (-t 30000 = 30s), stdout is empty.
-  action=$(notify-send \
+  # If an action is clicked, its key prints on stdout.
+  # GNOME ignores --expire-time for critical notifications and most others,
+  # so we cap blocking time with `timeout` — the user has 45s to click before
+  # the script moves on (the notification itself may linger in the panel).
+  action=$(timeout 45s notify-send \
     --app-name=ram-rescue \
     --urgency=critical \
     --icon=dialog-warning \
@@ -120,7 +139,7 @@ fire_alert() {
     --action="open=Open Monitor" \
     --action="snooze=Snooze 30m" \
     "Low memory: ${MEM_PCT}% available" \
-    "$body" 2>/dev/null || true)
+    "$body" 2>/dev/null) || action=""
 
   case "$action" in
     open)

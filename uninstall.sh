@@ -17,13 +17,11 @@ say "Removing scripts..."
 rm -rf "$PREFIX"
 rm -f "$HOME/.local/bin/ram-rescue"
 
+printf '\n\033[1;32mUninstalled.\033[0m\n\n'
 cat <<EOF
-
-\033[1;32mUninstalled.\033[0m
-
 Config and state preserved at:
-  ${XDG_CONFIG_HOME:-\$HOME/.config}/ram-rescue/
-  ${XDG_STATE_HOME:-\$HOME/.local/state}/ram-rescue/
+  ${XDG_CONFIG_HOME:-$HOME/.config}/ram-rescue/
+  ${XDG_STATE_HOME:-$HOME/.local/state}/ram-rescue/
 
 Delete manually if desired.
 EOF

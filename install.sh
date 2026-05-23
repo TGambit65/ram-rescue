@@ -126,10 +126,8 @@ install_files
 activate
 verify
 
+printf '\n\033[1;32mInstalled.\033[0m\n\n'
 cat <<EOF
-
-\033[1;32mInstalled.\033[0m
-
 Quick test:        ram-rescue test
 Show status:       ram-rescue status
 Tail logs:         ram-rescue logs
