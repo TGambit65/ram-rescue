@@ -1,0 +1,40 @@
+name: shellcheck
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck and shfmt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          sudo curl -fsSL -o /usr/local/bin/shfmt \
+            https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64
+          sudo chmod +x /usr/local/bin/shfmt
+
+      - name: shellcheck
+        run: |
+          shellcheck --severity=warning \
+            bin/ram-rescue \
+            bin/ram-rescue-ctl \
+            install.sh \
+            uninstall.sh \
+            test/fake-low-mem.sh \
+            test/shellcheck.sh
+
+      - name: shfmt --diff
+        run: |
+          shfmt -d -i 2 -ci \
+            bin/ram-rescue \
+            bin/ram-rescue-ctl \
+            install.sh \
+            uninstall.sh \
+            test/fake-low-mem.sh \
+            test/shellcheck.sh

@@ -1,0 +1,9 @@
+[Unit]
+Description=ram-rescue low-memory check
+Documentation=https://github.com/TGambit65/ram-rescue
+
+[Service]
+Type=oneshot
+ExecStart=@PREFIX@/ram-rescue
+# Ensure access to the user's D-Bus session for notify-send.
+PassEnvironment=DISPLAY XDG_RUNTIME_DIR XDG_CURRENT_DESKTOP DBUS_SESSION_BUS_ADDRESS WAYLAND_DISPLAY

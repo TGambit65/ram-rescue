@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# ram-rescue — low-memory alerter for Linux desktops
+# Invoked periodically by ram-rescue.timer. Exits silently when memory is fine.
+
+set -euo pipefail
+
+VERSION="0.1.0"
+
+# ---------------------------------------------------------------- config
+# Defaults — overridden by /etc/ram-rescue/config then ~/.config/ram-rescue/config.
+THRESHOLD_PCT=15
+COOLDOWN_SEC=600
+SNOOZE_DURATION=1800
+MONITOR_CMD=""
+
+# shellcheck disable=SC1091
+[[ -r /etc/ram-rescue/config ]] && source /etc/ram-rescue/config
+# shellcheck disable=SC1091
+[[ -r "${XDG_CONFIG_HOME:-$HOME/.config}/ram-rescue/config" ]] &&
+  source "${XDG_CONFIG_HOME:-$HOME/.config}/ram-rescue/config"
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/ram-rescue"
+QUIET_UNTIL_FILE="$STATE_DIR/quiet-until"
+mkdir -p "$STATE_DIR"
+
+# ---------------------------------------------------------------- desktop detection
+detect_monitor_cmd() {
+  if [[ -n "$MONITOR_CMD" ]]; then
+    return
+  fi
+  case "${XDG_CURRENT_DESKTOP:-}" in
+    *GNOME* | *Unity* | *Cinnamon*)
+      MONITOR_CMD="gnome-system-monitor"
+      ;;
+    *KDE* | *Plasma*)
+      if command -v plasma-systemmonitor >/dev/null 2>&1; then
+        MONITOR_CMD="plasma-systemmonitor"
+      else
+        MONITOR_CMD="ksysguard"
+      fi
+      ;;
+    *XFCE*)
+      MONITOR_CMD="xfce4-taskmanager"
+      ;;
+    *MATE*)
+      MONITOR_CMD="mate-system-monitor"
+      ;;
+    *)
+      # Fallback: launch htop in a terminal
+      if command -v gnome-terminal >/dev/null 2>&1; then
+        MONITOR_CMD="gnome-terminal -- htop"
+      elif command -v xterm >/dev/null 2>&1; then
+        MONITOR_CMD="xterm -e htop"
+      else
+        MONITOR_CMD=""
+      fi
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------- memory check
+read_memory() {
+  local total avail
+  total=$(awk '/^MemTotal:/{print $2}' /proc/meminfo)
+  avail=${MEMAVAILABLE_OVERRIDE:-$(awk '/^MemAvailable:/{print $2}' /proc/meminfo)}
+  if [[ -z "$total" || -z "$avail" ]]; then
+    logger -t ram-rescue "ERROR: could not read /proc/meminfo"
+    exit 1
+  fi
+  MEM_TOTAL_KB=$total
+  MEM_AVAIL_KB=$avail
+  MEM_PCT=$((avail * 100 / total))
+}
+
+# ---------------------------------------------------------------- quiet window
+in_quiet_window() {
+  [[ -f "$QUIET_UNTIL_FILE" ]] || return 1
+  local quiet_until now
+  quiet_until=$(<"$QUIET_UNTIL_FILE")
+  now=$(date +%s)
+  ((quiet_until > now))
+}
+
+set_quiet_window() {
+  local duration=$1
+  local until=$(($(date +%s) + duration))
+  echo "$until" >"$QUIET_UNTIL_FILE"
+}
+
+# ---------------------------------------------------------------- top consumers
+top_consumers() {
+  ps -eo comm,rss --sort=-rss --no-headers |
+    awk '{a[$1]+=$2} END {for(k in a) printf "%d %s\n", a[k], k}' |
+    sort -rn |
+    head -5 |
+    awk '{printf "  %-22s %5d MB\n", $2, int($1/1024)}'
+}
+
+# ---------------------------------------------------------------- alert
+fire_alert() {
+  local top body action
+  top=$(top_consumers)
+  body=$(printf "Available: %d%% (%d MB)\n\nTop consumers:\n%s" \
+    "$MEM_PCT" "$((MEM_AVAIL_KB / 1024))" "$top")
+
+  # Append fallback hint for daemons that ignore --action (e.g., xfce4-notifyd)
+  if [[ "${XDG_CURRENT_DESKTOP:-}" == *XFCE* ]]; then
+    body+=$'\n\nRun `ram-rescue open` to launch the monitor.'
+  fi
+
+  # notify-send --wait blocks until the notification is closed.
+  # If an action button is clicked, its key is printed on stdout.
+  # If the notification times out (-t 30000 = 30s), stdout is empty.
+  action=$(notify-send \
+    --app-name=ram-rescue \
+    --urgency=critical \
+    --icon=dialog-warning \
+    --wait \
+    --expire-time=30000 \
+    --action="open=Open Monitor" \
+    --action="snooze=Snooze 30m" \
+    "Low memory: ${MEM_PCT}% available" \
+    "$body" 2>/dev/null || true)
+
+  case "$action" in
+    open)
+      detect_monitor_cmd
+      if [[ -n "$MONITOR_CMD" ]]; then
+        # shellcheck disable=SC2086
+        nohup $MONITOR_CMD >/dev/null 2>&1 &
+        logger -t ram-rescue "user opened monitor: $MONITOR_CMD"
+      else
+        logger -t ram-rescue "WARN: no monitor command available for desktop ${XDG_CURRENT_DESKTOP:-unknown}"
+      fi
+      set_quiet_window "$COOLDOWN_SEC"
+      ;;
+    snooze)
+      set_quiet_window "$SNOOZE_DURATION"
+      logger -t ram-rescue "user snoozed for ${SNOOZE_DURATION}s"
+      ;;
+    *)
+      set_quiet_window "$COOLDOWN_SEC"
+      ;;
+  esac
+
+  logger -t ram-rescue "alert pct=${MEM_PCT} avail=${MEM_AVAIL_KB}kB action=${action:-none}"
+}
+
+# ---------------------------------------------------------------- main
+main() {
+  read_memory
+  if ((MEM_PCT >= THRESHOLD_PCT)); then
+    exit 0
+  fi
+  if in_quiet_window; then
+    exit 0
+  fi
+  fire_alert
+}
+
+case "${1:-}" in
+  --version) echo "ram-rescue $VERSION" ;;
+  --help)
+    cat <<'EOF'
+ram-rescue — low-memory alerter for Linux desktops.
+
+Invoked periodically by the ram-rescue.timer systemd-user unit.
+Reads /proc/meminfo and fires a desktop notification when MemAvailable
+drops below the configured threshold.
+
+Use `ram-rescue` (the CLI) for status, test, and config commands.
+
+Env vars:
+  MEMAVAILABLE_OVERRIDE=<kB>   force a low-memory condition for testing
+EOF
+    ;;
+  *) main ;;
+esac

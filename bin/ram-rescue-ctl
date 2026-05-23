@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# ram-rescue-ctl — user-facing CLI for ram-rescue.
+
+set -euo pipefail
+
+VERSION="0.1.0"
+PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/ram-rescue"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ram-rescue"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/ram-rescue"
+QUIET_UNTIL_FILE="$STATE_DIR/quiet-until"
+SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
+
+usage() {
+  cat <<EOF
+ram-rescue $VERSION — low-RAM alerter
+
+Usage: ram-rescue <command>
+
+Commands:
+  status              Show current memory state and timer status
+  test                Force a low-memory alert (uses MEMAVAILABLE_OVERRIDE)
+  open                Launch the system monitor sorted by memory
+  snooze [SECONDS]    Suppress alerts for N seconds (default: 1800)
+  unsnooze            Clear any active snooze
+  logs [N]            Show last N log lines from journald (default: 20)
+  version             Print version
+  uninstall           Remove ram-rescue (timer, service, scripts, links)
+  help                This message
+EOF
+}
+
+cmd_status() {
+  local total avail pct
+  total=$(awk '/^MemTotal:/{print $2}' /proc/meminfo)
+  avail=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo)
+  pct=$((avail * 100 / total))
+  echo "Memory:         ${pct}% available (${avail} kB / ${total} kB)"
+
+  local threshold=15
+  # shellcheck disable=SC1091
+  [[ -r "$CONFIG_DIR/config" ]] && source "$CONFIG_DIR/config"
+  echo "Threshold:      ${THRESHOLD_PCT:-$threshold}%"
+
+  if systemctl --user is-active --quiet ram-rescue.timer 2>/dev/null; then
+    echo "Timer:          active"
+    systemctl --user list-timers ram-rescue.timer --no-pager 2>/dev/null |
+      awk 'NR==2 {printf "Next run:       %s %s\n", $1, $2}'
+  else
+    echo "Timer:          inactive"
+  fi
+
+  if [[ -f "$QUIET_UNTIL_FILE" ]]; then
+    local quiet_until now remaining
+    quiet_until=$(<"$QUIET_UNTIL_FILE")
+    now=$(date +%s)
+    remaining=$((quiet_until - now))
+    if ((remaining > 0)); then
+      echo "Snoozed:        ${remaining}s remaining (until $(date -d "@$quiet_until" '+%H:%M:%S'))"
+    else
+      echo "Snoozed:        no"
+    fi
+  else
+    echo "Snoozed:        no"
+  fi
+}
+
+cmd_test() {
+  echo "Firing test alert (MEMAVAILABLE_OVERRIDE=100000)..."
+  MEMAVAILABLE_OVERRIDE=100000 "$PREFIX/ram-rescue"
+}
+
+cmd_open() {
+  case "${XDG_CURRENT_DESKTOP:-}" in
+    *GNOME* | *Unity* | *Cinnamon*) cmd="gnome-system-monitor" ;;
+    *KDE* | *Plasma*)
+      if command -v plasma-systemmonitor >/dev/null 2>&1; then
+        cmd="plasma-systemmonitor"
+      else
+        cmd="ksysguard"
+      fi
+      ;;
+    *XFCE*) cmd="xfce4-taskmanager" ;;
+    *MATE*) cmd="mate-system-monitor" ;;
+    *)
+      if command -v gnome-terminal >/dev/null 2>&1; then
+        cmd="gnome-terminal -- htop"
+      else
+        cmd="xterm -e htop"
+      fi
+      ;;
+  esac
+  # shellcheck disable=SC2086
+  nohup $cmd >/dev/null 2>&1 &
+  echo "Launched: $cmd"
+}
+
+cmd_snooze() {
+  local duration=${1:-1800}
+  mkdir -p "$STATE_DIR"
+  echo "$(($(date +%s) + duration))" >"$QUIET_UNTIL_FILE"
+  echo "Snoozed for ${duration}s (until $(date -d "@$(<"$QUIET_UNTIL_FILE")" '+%H:%M:%S'))"
+}
+
+cmd_unsnooze() {
+  rm -f "$QUIET_UNTIL_FILE"
+  echo "Snooze cleared."
+}
+
+cmd_logs() {
+  local n=${1:-20}
+  journalctl --user -t ram-rescue -n "$n" --no-pager
+}
+
+cmd_uninstall() {
+  echo "Uninstalling ram-rescue..."
+  systemctl --user disable --now ram-rescue.timer 2>/dev/null || true
+  rm -f "$SYSTEMD_USER_DIR/ram-rescue.timer" "$SYSTEMD_USER_DIR/ram-rescue.service"
+  systemctl --user daemon-reload
+  rm -rf "$PREFIX"
+  rm -f "$HOME/.local/bin/ram-rescue"
+  echo "Removed timer, service, scripts, and CLI link."
+  echo "Config (~/.config/ram-rescue/) and state (~/.local/state/ram-rescue/) preserved."
+  echo "Delete manually if desired."
+}
+
+case "${1:-help}" in
+  status) cmd_status ;;
+  test) cmd_test ;;
+  open) cmd_open ;;
+  snooze) shift; cmd_snooze "$@" ;;
+  unsnooze) cmd_unsnooze ;;
+  logs) shift; cmd_logs "$@" ;;
+  version | --version) echo "ram-rescue $VERSION" ;;
+  uninstall) cmd_uninstall ;;
+  help | --help | -h) usage ;;
+  *)
+    echo "Unknown command: $1" >&2
+    usage >&2
+    exit 1
+    ;;
+esac

@@ -1,0 +1,7 @@
+# Editor / OS
+*.swp
+*~
+.DS_Store
+
+# Local install artifacts
+*.local
