@@ -6,6 +6,22 @@ Linux GNOME doesn't warn before RAM exhaustion freezes your machine. macOS and W
 
 **Zero daemon, zero idle cost.** On Linux, a systemd timer wakes a bash script every 60 seconds. On macOS, a launchd agent. On Windows, a Scheduled Task. Each script reads memory, decides whether to alert, and exits. No background process, no Electron, no GUI framework — those would defeat the point of a tool that manages your RAM.
 
+### What the alert looks like
+
+```
+🟡 Low memory · 12% available
+3,900 MB free of 32,009 MB · Top apps:
+
+🌐 Chrome · 6.6 GB · ~45 tabs
+🐍 Python · 1.5 GB · Python interpreter
+🤖 Claude Code · 1.1 GB · Anthropic AI agent
+🖥️ GNOME · 1006 MB · Desktop env (keep alive)
+📡 uvicorn · 908 MB · Python ASGI web server
+                                       [Open Monitor] [Snooze 30m]
+```
+
+Processes are **grouped by app** so you see one row per program (not 50 rows of chrome subprocesses). Each app gets a one-line summary so you know what it is before you kill it. Severity emoji in the title (🟡 / 🟠 / 🔴) tells you at a glance how bad it is. Browsers show an approximate **tab count** so you know whether to close tabs or quit the whole browser.
+
 Install in one line. Uninstall in one line.
 
 ---
@@ -143,6 +159,7 @@ Override with `MONITOR_CMD="..."` in your config.
 
 ```
 ram-rescue status              Show current memory state and agent status
+ram-rescue apps                Show top apps grouped by name (no notification)
 ram-rescue test                Force a low-memory alert
 ram-rescue open                Launch the system monitor / Activity Monitor / Task Manager
 ram-rescue snooze [SECONDS]    Suppress alerts for N seconds (default: 1800)
@@ -152,6 +169,8 @@ ram-rescue version             Print version
 ram-rescue uninstall           Remove everything
 ram-rescue help                This message
 ```
+
+`ram-rescue apps` prints the same grouped view that the notification shows, but to your terminal — great for ad-hoc inspection or scripting.
 
 ## Troubleshooting
 

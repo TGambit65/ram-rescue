@@ -3,7 +3,7 @@
 
 $ErrorActionPreference = 'Stop'
 
-$Version = '0.2.0'
+$Version = '0.3.0'
 
 # ---------------------------------------------------------------- config defaults
 $Global:THRESHOLD_PCT = 15
@@ -23,7 +23,6 @@ function Read-Memory {
   $os = Get-CimInstance Win32_OperatingSystem
   $totalKB = [int]$os.TotalVisibleMemorySize
 
-  # Available MBytes counter approximates Linux MemAvailable.
   $availMB = [int](Get-Counter -Counter '\Memory\Available MBytes' -ErrorAction SilentlyContinue).CounterSamples.CookedValue
   if (-not $availMB) { $availMB = [int]($os.FreePhysicalMemory / 1024) }
 
@@ -50,17 +49,106 @@ function Set-QuietWindow {
   Set-Content -Path $QuietUntilFile -Value $until
 }
 
-function Get-TopConsumers {
-  Get-Process | Sort-Object WorkingSet -Descending | Select-Object -First 5 | ForEach-Object {
-    "  {0,-22} {1,5} MB" -f $_.Name, [int]($_.WorkingSet / 1MB)
+function Severity-Emoji {
+  param([int]$Pct)
+  if ($Pct -lt 5) { return '🔴' }
+  if ($Pct -lt 10) { return '🟠' }
+  return '🟡'
+}
+
+# ---------------------------------------------------------------- app classifier
+# Returns @{ Name = ...; Emoji = ...; Desc = ...; Category = ... }
+function Classify-App {
+  param([string]$Comm)
+  switch -Regex ($Comm) {
+    '^(chrome|GoogleChrome)$' { return @{ Name='Chrome'; Emoji='🌐'; Desc='Web browser'; Category='browser' } }
+    '^(msedge|MicrosoftEdge)' { return @{ Name='Edge'; Emoji='🔷'; Desc='Web browser'; Category='browser' } }
+    '^firefox$' { return @{ Name='Firefox'; Emoji='🦊'; Desc='Web browser'; Category='browser' } }
+    '^brave$' { return @{ Name='Brave'; Emoji='🦁'; Desc='Web browser'; Category='browser' } }
+    '^(Code|Code - Insiders)$' { return @{ Name='VS Code'; Emoji='📝'; Desc='Code editor'; Category='editor' } }
+    '^Cursor$' { return @{ Name='Cursor'; Emoji='✨'; Desc='AI code editor'; Category='editor' } }
+    '^claude$' { return @{ Name='Claude Code'; Emoji='🤖'; Desc='Anthropic AI agent'; Category='ai' } }
+    '^aider$' { return @{ Name='Aider'; Emoji='🤖'; Desc='AI pair programmer'; Category='ai' } }
+    '^slack$' { return @{ Name='Slack'; Emoji='💬'; Desc='Team chat'; Category='chat' } }
+    '^Discord$' { return @{ Name='Discord'; Emoji='🎮'; Desc='Chat app'; Category='chat' } }
+    '^Telegram' { return @{ Name='Telegram'; Emoji='✈️'; Desc='Chat app'; Category='chat' } }
+    '^Spotify$' { return @{ Name='Spotify'; Emoji='🎵'; Desc='Music streaming'; Category='media' } }
+    '^Zoom$' { return @{ Name='Zoom'; Emoji='🎥'; Desc='Video calls'; Category='media' } }
+    '^obs(64)?$' { return @{ Name='OBS Studio'; Emoji='📹'; Desc='Streaming/recording'; Category='media' } }
+    '^vlc$' { return @{ Name='VLC'; Emoji='🎬'; Desc='Media player'; Category='media' } }
+    '^node$' { return @{ Name='Node.js'; Emoji='⚙️'; Desc='JavaScript runtime'; Category='runtime' } }
+    '^npm$' { return @{ Name='npm'; Emoji='📦'; Desc='npm-managed Node process'; Category='runtime' } }
+    '^python(3)?$' { return @{ Name='Python'; Emoji='🐍'; Desc='Python interpreter'; Category='runtime' } }
+    '^java(w)?$' { return @{ Name='Java'; Emoji='☕'; Desc='JVM application'; Category='runtime' } }
+    '^ruby$' { return @{ Name='Ruby'; Emoji='💎'; Desc='Ruby interpreter'; Category='runtime' } }
+    '^(cargo|rustc|rust)$' { return @{ Name='Rust'; Emoji='🦀'; Desc='Rust toolchain'; Category='runtime' } }
+    '^(docker|com\.docker)' { return @{ Name='Docker'; Emoji='🐳'; Desc='Container runtime'; Category='system' } }
+    '^postgres$' { return @{ Name='PostgreSQL'; Emoji='🐘'; Desc='Database'; Category='server' } }
+    '^mysqld$' { return @{ Name='MySQL'; Emoji='🐬'; Desc='Database'; Category='server' } }
+    '^redis-server$' { return @{ Name='Redis'; Emoji='📕'; Desc='In-memory database'; Category='server' } }
+    '^mongod$' { return @{ Name='MongoDB'; Emoji='🍃'; Desc='Document database'; Category='server' } }
+    '^nginx$' { return @{ Name='nginx'; Emoji='🚀'; Desc='Web server'; Category='server' } }
+    '^(System|svchost|csrss|wininit|services|lsass|smss|winlogon|dwm|explorer|RuntimeBroker|sihost|fontdrvhost|ctfmon|searchindexer|searchapp|ShellExperienceHost|StartMenuExperienceHost|TextInputHost|ApplicationFrameHost)' {
+      return @{ Name='Windows system'; Emoji='⚙️'; Desc='OS services (keep alive)'; Category='system' }
+    }
+    '^(pwsh|powershell|cmd|WindowsTerminal|wt)$' { return @{ Name='Terminal/Shell'; Emoji='🐚'; Desc='Shell or terminal'; Category='shell' } }
+    default { return @{ Name=$Comm; Emoji='📦'; Desc='Process'; Category='other' } }
   }
+}
+
+function Count-ChromeTabs {
+  try {
+    $chromeProcs = Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" -ErrorAction SilentlyContinue
+    if (-not $chromeProcs) { return 0 }
+    return @($chromeProcs | Where-Object { $_.CommandLine -match '--type=renderer' -and $_.CommandLine -notmatch 'extension-process' }).Count
+  } catch { return 0 }
+}
+
+function Get-TopApps {
+  $apps = @{}
+  $procs = Get-Process -ErrorAction SilentlyContinue
+  foreach ($p in $procs) {
+    if ($p.WorkingSet64 -le 0) { continue }
+    $info = Classify-App -Comm $p.Name
+    $name = $info.Name
+    if (-not $apps.ContainsKey($name)) {
+      $apps[$name] = [PSCustomObject]@{
+        Name = $name
+        Emoji = $info.Emoji
+        Desc = $info.Desc
+        Category = $info.Category
+        RSS = 0
+        Count = 0
+      }
+    }
+    $apps[$name].RSS += $p.WorkingSet64
+    $apps[$name].Count += 1
+  }
+
+  $sorted = $apps.Values | Sort-Object RSS -Descending | Select-Object -First 5
+  $chromeTabs = -1
+  $lines = foreach ($app in $sorted) {
+    $mb = [int]($app.RSS / 1MB)
+    $sizeDisp = if ($mb -ge 1024) { '{0:N1} GB' -f ($mb / 1024) } else { "$mb MB" }
+
+    $extra = $app.Desc
+    if ($app.Name -eq 'Chrome') {
+      if ($chromeTabs -lt 0) { $chromeTabs = Count-ChromeTabs }
+      if ($chromeTabs -gt 0) { $extra = "~$chromeTabs tabs" }
+    }
+
+    "{0} {1} · {2} · {3}" -f $app.Emoji, $app.Name, $sizeDisp, $extra
+  }
+  return ($lines -join "`n")
 }
 
 function Fire-Alert {
   param($Mem)
 
-  $top = (Get-TopConsumers) -join "`n"
-  $body = "Available: $($Mem.Pct)% ($([int]($Mem.AvailKB / 1024)) MB)`n`nTop consumers:`n$top`n`nRun 'ram-rescue open' to launch Task Manager."
+  $apps = Get-TopApps
+  $severity = Severity-Emoji -Pct $Mem.Pct
+  $title = "$severity Low memory · $($Mem.Pct)% available"
+  $body = "$([int]($Mem.AvailKB / 1024)) MB free of $([int]($Mem.TotalKB / 1024)) MB · Top apps:`n`n$apps`n`nRun 'ram-rescue open' to launch Task Manager."
 
   Add-Type -AssemblyName System.Windows.Forms
   Add-Type -AssemblyName System.Drawing
@@ -68,13 +156,11 @@ function Fire-Alert {
   $notifyIcon = New-Object System.Windows.Forms.NotifyIcon
   try {
     $notifyIcon.Icon = [System.Drawing.SystemIcons]::Warning
-    $notifyIcon.BalloonTipTitle = "ram-rescue: Low memory ($($Mem.Pct)% available)"
+    $notifyIcon.BalloonTipTitle = $title
     $notifyIcon.BalloonTipText = $body
     $notifyIcon.BalloonTipIcon = 'Warning'
     $notifyIcon.Visible = $true
-    # On Windows 10+, balloon tips auto-promote to toast notifications.
     $notifyIcon.ShowBalloonTip(15000)
-    # Keep the notifyIcon alive long enough for the toast to display.
     Start-Sleep -Seconds 16
   } finally {
     $notifyIcon.Visible = $false
@@ -82,11 +168,7 @@ function Fire-Alert {
   }
 
   Set-QuietWindow -DurationSec $Global:COOLDOWN_SEC
-  # Write to Windows Event Log (Applications log, source "ram-rescue").
   try {
-    if (-not [System.Diagnostics.EventLog]::SourceExists('ram-rescue')) {
-      # Source creation requires admin; if not allowed, skip silently.
-    }
     Write-EventLog -LogName Application -Source 'ram-rescue' -EntryType Warning -EventId 1 `
       -Message "alert pct=$($Mem.Pct) avail=$($Mem.AvailKB)kB" -ErrorAction SilentlyContinue
   } catch { }
@@ -102,6 +184,15 @@ function Main {
 
 switch ($args[0]) {
   '--version' { Write-Output "ram-rescue $Version" }
-  '--help'    { Write-Output "ram-rescue $Version (Windows). Invoked by Scheduled Task. Use ram-rescue-ctl.ps1 for CLI." }
+  '--apps' {
+    $mem = Read-Memory
+    $severity = Severity-Emoji -Pct $mem.Pct
+    Write-Output "$severity Memory: $($mem.Pct)% available ($([int]($mem.AvailKB / 1024)) MB free of $([int]($mem.TotalKB / 1024)) MB)"
+    Write-Output ""
+    Write-Output "Top apps:"
+    Write-Output ""
+    Write-Output (Get-TopApps)
+  }
+  '--help'    { Write-Output "ram-rescue $Version (Windows). Use ram-rescue-ctl.ps1 for the CLI. Flags: --apps, --version, --help" }
   default     { Main }
 }

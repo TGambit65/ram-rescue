@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 
 # ---------------------------------------------------------------- config
 THRESHOLD_PCT=15
@@ -21,9 +21,7 @@ QUIET_UNTIL_FILE="$STATE_DIR/quiet-until"
 mkdir -p "$STATE_DIR"
 
 # ---------------------------------------------------------------- memory check
-# macOS doesn't expose MemAvailable directly. Approximate with:
-#   available = free + inactive + speculative
-# (Compressed pages are NOT counted as available — they're held but reclaimable.)
+# macOS: approximate MemAvailable as free + inactive + speculative pages.
 read_memory() {
   local page_size total_bytes free inactive spec avail_pages avail_bytes
   page_size=$(sysctl -n hw.pagesize)
@@ -55,41 +53,166 @@ set_quiet_window() {
   echo "$(($(date +%s) + duration))" >"$QUIET_UNTIL_FILE"
 }
 
-# ---------------------------------------------------------------- top consumers
-top_consumers() {
-  ps -axo rss,comm | awk '
-    NR > 1 {
-      # comm may contain spaces (e.g. "/Applications/Foo.app/.../bar"); take basename
-      n = split($2, parts, "/")
-      cmd = parts[n]
-      a[cmd] += $1
-    }
-    END {
-      n = 0
-      for (k in a) keys[n++] = k
-      for (i = 1; i < n; i++) {
-        cur = keys[i]; j = i - 1
-        while (j >= 0 && a[keys[j]] < a[cur]) { keys[j+1] = keys[j]; j-- }
-        keys[j+1] = cur
-      }
-      lim = (n < 5) ? n : 5
-      for (i = 0; i < lim; i++)
-        printf "  %-22s %5d MB\n", keys[i], int(a[keys[i]]/1024)
-    }
-  '
+# ---------------------------------------------------------------- app classifier (macOS-flavored)
+classify_app() {
+  case "$1" in
+    "Google Chrome" | "Google Chrome Helper"* | "Chromium"*)
+      printf '%s\t%s\t%s\t%s\n' "Chrome" "🌐" "Web browser" "browser" ;;
+    Safari | "Safari Helper"* | "com.apple.WebKit"*)
+      printf '%s\t%s\t%s\t%s\n' "Safari" "🧭" "Web browser" "browser" ;;
+    firefox*)
+      printf '%s\t%s\t%s\t%s\n' "Firefox" "🦊" "Web browser" "browser" ;;
+    "Brave Browser"* | Brave*)
+      printf '%s\t%s\t%s\t%s\n' "Brave" "🦁" "Web browser" "browser" ;;
+    "Code" | "Visual Studio Code"* | "Code Helper"*)
+      printf '%s\t%s\t%s\t%s\n' "VS Code" "📝" "Code editor" "editor" ;;
+    Cursor*)
+      printf '%s\t%s\t%s\t%s\n' "Cursor" "✨" "AI code editor" "editor" ;;
+    claude | "Claude")
+      printf '%s\t%s\t%s\t%s\n' "Claude Code" "🤖" "Anthropic AI agent" "ai" ;;
+    aider)
+      printf '%s\t%s\t%s\t%s\n' "Aider" "🤖" "AI pair programmer" "ai" ;;
+    Slack | "Slack Helper"*)
+      printf '%s\t%s\t%s\t%s\n' "Slack" "💬" "Team chat" "chat" ;;
+    Discord*)
+      printf '%s\t%s\t%s\t%s\n' "Discord" "🎮" "Chat app" "chat" ;;
+    Telegram*)
+      printf '%s\t%s\t%s\t%s\n' "Telegram" "✈️" "Chat app" "chat" ;;
+    Spotify*)
+      printf '%s\t%s\t%s\t%s\n' "Spotify" "🎵" "Music streaming" "media" ;;
+    zoom.us | "zoom.us Helper"*)
+      printf '%s\t%s\t%s\t%s\n' "Zoom" "🎥" "Video calls" "media" ;;
+    OBS* | obs)
+      printf '%s\t%s\t%s\t%s\n' "OBS Studio" "📹" "Streaming/recording" "media" ;;
+    VLC | vlc)
+      printf '%s\t%s\t%s\t%s\n' "VLC" "🎬" "Media player" "media" ;;
+    node | nodejs)
+      printf '%s\t%s\t%s\t%s\n' "Node.js" "⚙️" "JavaScript runtime" "runtime" ;;
+    npm | "npm exec"* | "npm run"*)
+      printf '%s\t%s\t%s\t%s\n' "npm" "📦" "npm-managed Node process" "runtime" ;;
+    "next-server"*)
+      printf '%s\t%s\t%s\t%s\n' "Next.js dev" "▲" "Next.js development server" "server" ;;
+    "vite"* | esbuild)
+      printf '%s\t%s\t%s\t%s\n' "Vite/esbuild" "⚡" "Frontend dev tooling" "server" ;;
+    python | python3 | python3.* | python2 | python2.*)
+      printf '%s\t%s\t%s\t%s\n' "Python" "🐍" "Python interpreter" "runtime" ;;
+    uvicorn)
+      printf '%s\t%s\t%s\t%s\n' "uvicorn" "📡" "Python ASGI web server" "server" ;;
+    gunicorn)
+      printf '%s\t%s\t%s\t%s\n' "gunicorn" "📡" "Python WSGI web server" "server" ;;
+    java | javaw)
+      printf '%s\t%s\t%s\t%s\n' "Java" "☕" "JVM application" "runtime" ;;
+    ruby)
+      printf '%s\t%s\t%s\t%s\n' "Ruby" "💎" "Ruby interpreter" "runtime" ;;
+    rust | cargo | rustc)
+      printf '%s\t%s\t%s\t%s\n' "Rust" "🦀" "Rust toolchain" "runtime" ;;
+    Docker* | docker | dockerd | com.docker.*)
+      printf '%s\t%s\t%s\t%s\n' "Docker" "🐳" "Container runtime" "system" ;;
+    postgres | postgresql)
+      printf '%s\t%s\t%s\t%s\n' "PostgreSQL" "🐘" "Database" "server" ;;
+    mysqld | mariadbd)
+      printf '%s\t%s\t%s\t%s\n' "MySQL" "🐬" "Database" "server" ;;
+    "redis-server")
+      printf '%s\t%s\t%s\t%s\n' "Redis" "📕" "In-memory database" "server" ;;
+    mongod)
+      printf '%s\t%s\t%s\t%s\n' "MongoDB" "🍃" "Document database" "server" ;;
+    Finder | Dock | SystemUIServer | WindowServer | loginwindow | launchd)
+      printf '%s\t%s\t%s\t%s\n' "macOS UI" "🖥️" "System UI (keep alive)" "system" ;;
+    "kernel_task" | "mds"* | "mdworker"* | "spotlightd" | "cloudd")
+      printf '%s\t%s\t%s\t%s\n' "macOS background" "⚙️" "System services (keep alive)" "system" ;;
+    bash | zsh | sh | fish)
+      printf '%s\t%s\t%s\t%s\n' "Shell sessions" "🐚" "Login shells & subshells" "shell" ;;
+    Terminal | iTerm* | Warp | Alacritty | kitty)
+      printf '%s\t%s\t%s\t%s\n' "Terminal" "🖥️" "Terminal emulator" "app" ;;
+    *)
+      printf '%s\t%s\t%s\t%s\n' "$1" "📦" "Process" "other" ;;
+  esac
+}
+
+# Chrome tab proxy: count renderer Helper processes (macOS).
+count_chrome_tabs() {
+  local count
+  count=$(pgrep -af 'Google Chrome Helper' 2>/dev/null |
+    awk '/type=renderer/ && !/extension-process/' |
+    wc -l | tr -d ' ') || count=0
+  echo "${count:-0}"
+}
+
+# ---------------------------------------------------------------- top apps
+top_apps() {
+  local -A app_rss app_count app_emoji app_desc app_cat
+  local rss comm info name emoji desc cat cur
+
+  set +u
+  while read -r rss comm; do
+    [[ -z "$comm" ]] && continue
+    ((rss == 0)) && continue
+    info=$(classify_app "$comm")
+    IFS=$'\t' read -r name emoji desc cat <<<"$info"
+    cur=${app_rss[$name]:-0}
+    app_rss[$name]=$((cur + rss))
+    cur=${app_count[$name]:-0}
+    app_count[$name]=$((cur + 1))
+    app_emoji[$name]="$emoji"
+    app_desc[$name]="$desc"
+    app_cat[$name]="$cat"
+  done < <(ps -axo rss,comm | tail -n +2)
+  set -u
+
+  local sorted
+  sorted=$(for name in "${!app_rss[@]}"; do
+    printf '%d\t%s\n' "${app_rss[$name]}" "$name"
+  done | sort -rn)
+
+  local count=0 chrome_tabs=-1 rss name mb mb_disp extra
+  while IFS=$'\t' read -r rss name; do
+    ((count >= 5)) && break
+    [[ -z "$name" ]] && continue
+
+    mb=$((rss / 1024))
+    if ((mb >= 1024)); then
+      mb_disp=$(awk -v m="$mb" 'BEGIN{printf "%.1f GB", m/1024}')
+    else
+      mb_disp="${mb} MB"
+    fi
+
+    extra="${app_desc[$name]}"
+    if [[ "$name" == "Chrome" ]]; then
+      if ((chrome_tabs < 0)); then chrome_tabs=$(count_chrome_tabs); fi
+      if ((chrome_tabs > 0)); then
+        extra="~${chrome_tabs} tabs"
+      fi
+    fi
+
+    printf '%s %s · %s · %s\n' "${app_emoji[$name]}" "$name" "$mb_disp" "$extra"
+    count=$((count + 1))
+  done <<<"$sorted"
+}
+
+# ---------------------------------------------------------------- severity emoji
+severity_emoji() {
+  local pct=$1
+  if ((pct < 5)); then
+    echo "🔴"
+  elif ((pct < 10)); then
+    echo "🟠"
+  else
+    echo "🟡"
+  fi
 }
 
 # ---------------------------------------------------------------- alert
 fire_alert() {
-  local top body
-  top=$(top_consumers)
-  body=$(printf 'Available: %d%% (%d MB)\n\nTop consumers:\n%s\n\nRun `ram-rescue open` in Terminal to launch Activity Monitor.' \
-    "$MEM_PCT" "$((MEM_AVAIL_KB / 1024))" "$top")
+  local apps severity title body
+  severity=$(severity_emoji "$MEM_PCT")
+  apps=$(top_apps)
+  title="${severity} Low memory · ${MEM_PCT}% available"
+  body=$(printf '%d MB free of %d MB · Top apps:\n\n%s\n\nRun `ram-rescue open` to launch Activity Monitor.' \
+    "$((MEM_AVAIL_KB / 1024))" "$((MEM_TOTAL_KB / 1024))" "$apps")
 
   # macOS Notification Center (no action buttons — that requires a Cocoa app).
-  # The body text instructs the user to run `ram-rescue open`.
   /usr/bin/osascript <<APPLESCRIPT 2>/dev/null || true
-display notification "$body" with title "ram-rescue: Low memory ($MEM_PCT% available)" sound name "Submarine"
+display notification "$body" with title "$title" sound name "Submarine"
 APPLESCRIPT
 
   set_quiet_window "$COOLDOWN_SEC"
@@ -111,15 +234,23 @@ main() {
 
 case "${1:-}" in
   --version) echo "ram-rescue $VERSION" ;;
+  --apps)
+    read_memory
+    severity=$(severity_emoji "$MEM_PCT")
+    printf '%s Memory: %d%% available (%d MB free of %d MB)\n\nTop apps:\n\n' \
+      "$severity" "$MEM_PCT" "$((MEM_AVAIL_KB / 1024))" "$((MEM_TOTAL_KB / 1024))"
+    top_apps
+    ;;
   --help)
     cat <<'EOF'
 ram-rescue (macOS) — low-memory alerter for macOS.
 
 Invoked periodically by the com.tgambit65.ram-rescue launchd agent.
-Use `ram-rescue` (the CLI) for status, test, and config commands.
 
-Env vars:
-  MEMAVAILABLE_OVERRIDE=<kB>   force a low-memory condition for testing
+Flags:
+  --apps      Print the grouped top-apps view to stdout (no notification)
+  --version   Print version
+  --help      This message
 EOF
     ;;
   *) main ;;

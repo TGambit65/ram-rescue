@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 PREFIX="$HOME/Library/Application Support/ram-rescue"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ram-rescue"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/ram-rescue"
@@ -19,6 +19,7 @@ Usage: ram-rescue <command>
 
 Commands:
   status              Show current memory state and launchd agent status
+  apps                Show top apps grouped by name (no notification)
   test                Force a low-memory alert (uses MEMAVAILABLE_OVERRIDE)
   open                Launch Activity Monitor
   snooze [SECONDS]    Suppress alerts for N seconds (default: 1800)
@@ -76,6 +77,10 @@ cmd_test() {
   MEMAVAILABLE_OVERRIDE=100000 "$PREFIX/ram-rescue"
 }
 
+cmd_apps() {
+  "$PREFIX/ram-rescue" --apps
+}
+
 cmd_open() { open -a "Activity Monitor"; }
 
 cmd_snooze() {
@@ -107,6 +112,7 @@ cmd_uninstall() {
 
 case "${1:-help}" in
   status) cmd_status ;;
+  apps) cmd_apps ;;
   test) cmd_test ;;
   open) cmd_open ;;
   snooze) shift; cmd_snooze "$@" ;;

@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# ram-rescue — low-memory alerter for Linux desktops
+# ram-rescue — low-memory alerter for Linux desktops.
 # Invoked periodically by ram-rescue.timer. Exits silently when memory is fine.
 
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.3.0"
 
 # ---------------------------------------------------------------- config
-# Defaults — overridden by /etc/ram-rescue/config then ~/.config/ram-rescue/config.
 THRESHOLD_PCT=15
 COOLDOWN_SEC=600
 SNOOZE_DURATION=1800
@@ -29,9 +28,7 @@ detect_monitor_cmd() {
     return
   fi
   case "${XDG_CURRENT_DESKTOP:-}" in
-    *GNOME* | *Unity* | *Cinnamon*)
-      MONITOR_CMD="gnome-system-monitor"
-      ;;
+    *GNOME* | *Unity* | *Cinnamon*) MONITOR_CMD="gnome-system-monitor" ;;
     *KDE* | *Plasma*)
       if command -v plasma-systemmonitor >/dev/null 2>&1; then
         MONITOR_CMD="plasma-systemmonitor"
@@ -39,14 +36,9 @@ detect_monitor_cmd() {
         MONITOR_CMD="ksysguard"
       fi
       ;;
-    *XFCE*)
-      MONITOR_CMD="xfce4-taskmanager"
-      ;;
-    *MATE*)
-      MONITOR_CMD="mate-system-monitor"
-      ;;
+    *XFCE*) MONITOR_CMD="xfce4-taskmanager" ;;
+    *MATE*) MONITOR_CMD="mate-system-monitor" ;;
     *)
-      # Fallback: launch htop in a terminal
       if command -v gnome-terminal >/dev/null 2>&1; then
         MONITOR_CMD="gnome-terminal -- htop"
       elif command -v xterm >/dev/null 2>&1; then
@@ -83,53 +75,191 @@ in_quiet_window() {
 
 set_quiet_window() {
   local duration=$1
-  local until=$(($(date +%s) + duration))
-  echo "$until" >"$QUIET_UNTIL_FILE"
+  echo "$(($(date +%s) + duration))" >"$QUIET_UNTIL_FILE"
 }
 
-# ---------------------------------------------------------------- top consumers
-# Aggregates RSS by command name and prints top 5. Single awk invocation
-# (no internal pipeline) so `set -o pipefail` can't trip on SIGPIPE from head.
-top_consumers() {
-  ps -eo comm,rss --no-headers | awk '
-    { a[$1] += $2 }
-    END {
-      n = 0
-      for (k in a) keys[n++] = k
-      # Insertion-sort by total RSS desc — fine for ~200 procs
-      for (i = 1; i < n; i++) {
-        cur = keys[i]
-        j = i - 1
-        while (j >= 0 && a[keys[j]] < a[cur]) {
-          keys[j+1] = keys[j]
-          j--
-        }
-        keys[j+1] = cur
-      }
-      lim = (n < 5) ? n : 5
-      for (i = 0; i < lim; i++)
-        printf "  %-22s %5d MB\n", keys[i], int(a[keys[i]]/1024)
-    }
-  '
+# ---------------------------------------------------------------- app classifier
+# Maps a process `comm` to "AppName<TAB>Emoji<TAB>Description<TAB>Category".
+# First match wins. Unknown processes fall through to "$comm + package emoji".
+classify_app() {
+  case "$1" in
+    chrome | chromium | google-chrome* | chromium-browser)
+      printf '%s\t%s\t%s\t%s\n' "Chrome" "🌐" "Web browser" "browser" ;;
+    firefox*)
+      printf '%s\t%s\t%s\t%s\n' "Firefox" "🦊" "Web browser" "browser" ;;
+    brave | brave-browser)
+      printf '%s\t%s\t%s\t%s\n' "Brave" "🦁" "Web browser" "browser" ;;
+    opera | Opera)
+      printf '%s\t%s\t%s\t%s\n' "Opera" "🔵" "Web browser" "browser" ;;
+    Code | code | code-insiders | codium | VSCodium)
+      printf '%s\t%s\t%s\t%s\n' "VS Code" "📝" "Code editor" "editor" ;;
+    cursor | Cursor)
+      printf '%s\t%s\t%s\t%s\n' "Cursor" "✨" "AI code editor" "editor" ;;
+    claude)
+      printf '%s\t%s\t%s\t%s\n' "Claude Code" "🤖" "Anthropic AI agent" "ai" ;;
+    aider)
+      printf '%s\t%s\t%s\t%s\n' "Aider" "🤖" "AI pair programmer" "ai" ;;
+    openclaw | clawd)
+      printf '%s\t%s\t%s\t%s\n' "OpenClaw" "🦞" "AI gateway" "ai" ;;
+    slack)
+      printf '%s\t%s\t%s\t%s\n' "Slack" "💬" "Team chat" "chat" ;;
+    discord | Discord)
+      printf '%s\t%s\t%s\t%s\n' "Discord" "🎮" "Chat app" "chat" ;;
+    telegram-desktop | Telegram)
+      printf '%s\t%s\t%s\t%s\n' "Telegram" "✈️" "Chat app" "chat" ;;
+    spotify | Spotify)
+      printf '%s\t%s\t%s\t%s\n' "Spotify" "🎵" "Music streaming" "media" ;;
+    zoom | Zoom | zoom.us)
+      printf '%s\t%s\t%s\t%s\n' "Zoom" "🎥" "Video calls" "media" ;;
+    obs | OBS | obs-studio)
+      printf '%s\t%s\t%s\t%s\n' "OBS Studio" "📹" "Streaming/recording" "media" ;;
+    vlc | VLC)
+      printf '%s\t%s\t%s\t%s\n' "VLC" "🎬" "Media player" "media" ;;
+    node | nodejs)
+      printf '%s\t%s\t%s\t%s\n' "Node.js" "⚙️" "JavaScript runtime" "runtime" ;;
+    npm | "npm exec"* | "npm run"*)
+      printf '%s\t%s\t%s\t%s\n' "npm" "📦" "npm-managed Node process" "runtime" ;;
+    "next-server"*)
+      printf '%s\t%s\t%s\t%s\n' "Next.js dev" "▲" "Next.js development server" "server" ;;
+    "vite"* | esbuild)
+      printf '%s\t%s\t%s\t%s\n' "Vite/esbuild" "⚡" "Frontend dev tooling" "server" ;;
+    webpack*)
+      printf '%s\t%s\t%s\t%s\n' "webpack" "📦" "Bundler" "runtime" ;;
+    python | python3 | python3.* | python2 | python2.*)
+      printf '%s\t%s\t%s\t%s\n' "Python" "🐍" "Python interpreter" "runtime" ;;
+    uvicorn)
+      printf '%s\t%s\t%s\t%s\n' "uvicorn" "📡" "Python ASGI web server" "server" ;;
+    gunicorn)
+      printf '%s\t%s\t%s\t%s\n' "gunicorn" "📡" "Python WSGI web server" "server" ;;
+    java | javaw)
+      printf '%s\t%s\t%s\t%s\n' "Java" "☕" "JVM application" "runtime" ;;
+    ruby)
+      printf '%s\t%s\t%s\t%s\n' "Ruby" "💎" "Ruby interpreter" "runtime" ;;
+    rust | cargo | rustc)
+      printf '%s\t%s\t%s\t%s\n' "Rust" "🦀" "Rust toolchain" "runtime" ;;
+    docker | dockerd | containerd | containerd-shim*)
+      printf '%s\t%s\t%s\t%s\n' "Docker" "🐳" "Container runtime" "system" ;;
+    postgres | postgresql | postmaster)
+      printf '%s\t%s\t%s\t%s\n' "PostgreSQL" "🐘" "Database" "server" ;;
+    mysqld | mariadbd)
+      printf '%s\t%s\t%s\t%s\n' "MySQL" "🐬" "Database" "server" ;;
+    redis-server)
+      printf '%s\t%s\t%s\t%s\n' "Redis" "📕" "In-memory database" "server" ;;
+    mongod)
+      printf '%s\t%s\t%s\t%s\n' "MongoDB" "🍃" "Document database" "server" ;;
+    nginx)
+      printf '%s\t%s\t%s\t%s\n' "nginx" "🚀" "Web server" "server" ;;
+    AionUi | aion-ui)
+      printf '%s\t%s\t%s\t%s\n' "AionUi" "🪟" "Desktop app" "app" ;;
+    gnome-shell | gnome-session* | gjs | nautilus | gsd-* | gnome-software | tracker3 | tracker-extract* | evolution-* | goa-daemon)
+      printf '%s\t%s\t%s\t%s\n' "GNOME" "🖥️" "Desktop env (keep alive)" "system" ;;
+    plasmashell | kded5 | kwin* | krunner | plasma-discover | baloo*)
+      printf '%s\t%s\t%s\t%s\n' "KDE Plasma" "🖥️" "Desktop env (keep alive)" "system" ;;
+    Xorg | Xwayland | xwayland)
+      printf '%s\t%s\t%s\t%s\n' "X server" "🖥️" "Display server (keep alive)" "system" ;;
+    systemd | systemd-* | init | dbus-* | polkitd | NetworkManager | wpa_supplicant | ModemManager | snapd | upowerd | gdm* | login*)
+      printf '%s\t%s\t%s\t%s\n' "systemd & system" "⚙️" "System services (keep alive)" "system" ;;
+    pulseaudio | pipewire | pipewire-* | wireplumber)
+      printf '%s\t%s\t%s\t%s\n' "Audio system" "🔊" "Audio daemon" "system" ;;
+    bash | zsh | sh | fish | dash)
+      printf '%s\t%s\t%s\t%s\n' "Shell sessions" "🐚" "Login shells & subshells" "shell" ;;
+    gnome-terminal* | konsole | xterm | kitty | alacritty | wezterm)
+      printf '%s\t%s\t%s\t%s\n' "Terminal" "🖥️" "Terminal emulator" "app" ;;
+    *)
+      printf '%s\t%s\t%s\t%s\n' "$1" "📦" "Process" "other" ;;
+  esac
+}
+
+# Approximate Chrome tab count: renderer processes excluding extension renderers.
+count_chrome_tabs() {
+  local count
+  count=$(pgrep -af 'chrome|chromium' 2>/dev/null |
+    awk '/type=renderer/ && !/extension-process/' |
+    wc -l) || count=0
+  echo "${count:-0}"
+}
+
+# ---------------------------------------------------------------- top apps
+top_apps() {
+  local -A app_rss app_count app_emoji app_desc app_cat
+  local rss comm info name emoji desc cat cur
+
+  # `ps -eo rss,comm` puts the numeric RSS first; with `read -r rss comm`,
+  # any spaces in `comm` (kernel threads like "UVM global queu", or wrapped
+  # npm commands) end up in $comm as expected.
+  set +u
+  while read -r rss comm; do
+    [[ -z "$comm" ]] && continue
+    # Skip kernel threads (RSS always 0) — they're not user-killable anyway.
+    ((rss == 0)) && continue
+    info=$(classify_app "$comm")
+    IFS=$'\t' read -r name emoji desc cat <<<"$info"
+    cur=${app_rss[$name]:-0}
+    app_rss[$name]=$((cur + rss))
+    cur=${app_count[$name]:-0}
+    app_count[$name]=$((cur + 1))
+    app_emoji[$name]="$emoji"
+    app_desc[$name]="$desc"
+    app_cat[$name]="$cat"
+  done < <(ps -eo rss,comm --no-headers)
+  set -u
+
+  # Sort apps by total RSS desc — write to var to avoid pipefail+head SIGPIPE.
+  local sorted
+  sorted=$(for name in "${!app_rss[@]}"; do
+    printf '%d\t%s\n' "${app_rss[$name]}" "$name"
+  done | sort -rn)
+
+  local count=0 chrome_tabs=-1 rss name mb mb_disp extra
+  while IFS=$'\t' read -r rss name; do
+    ((count >= 5)) && break
+    [[ -z "$name" ]] && continue
+
+    mb=$((rss / 1024))
+    if ((mb >= 1024)); then
+      mb_disp=$(awk -v m="$mb" 'BEGIN{printf "%.1f GB", m/1024}')
+    else
+      mb_disp="${mb} MB"
+    fi
+
+    extra="${app_desc[$name]}"
+    if [[ "$name" == "Chrome" || "$name" == "Chromium" || "$name" == "Brave" ]]; then
+      if ((chrome_tabs < 0)); then chrome_tabs=$(count_chrome_tabs); fi
+      if ((chrome_tabs > 0)); then
+        extra="~${chrome_tabs} tabs"
+      fi
+    fi
+
+    printf '%s %s · %s · %s\n' "${app_emoji[$name]}" "$name" "$mb_disp" "$extra"
+    count=$((count + 1))
+  done <<<"$sorted"
+}
+
+# ---------------------------------------------------------------- severity emoji
+severity_emoji() {
+  local pct=$1
+  if ((pct < 5)); then
+    echo "🔴"
+  elif ((pct < 10)); then
+    echo "🟠"
+  else
+    echo "🟡"
+  fi
 }
 
 # ---------------------------------------------------------------- alert
 fire_alert() {
-  local top body action
-  top=$(top_consumers)
-  body=$(printf "Available: %d%% (%d MB)\n\nTop consumers:\n%s" \
-    "$MEM_PCT" "$((MEM_AVAIL_KB / 1024))" "$top")
+  local apps severity body title action
+  severity=$(severity_emoji "$MEM_PCT")
+  apps=$(top_apps)
+  title="${severity} Low memory · ${MEM_PCT}% available"
+  body=$(printf '%d MB free of %d MB · Top apps:\n\n%s' \
+    "$((MEM_AVAIL_KB / 1024))" "$((MEM_TOTAL_KB / 1024))" "$apps")
 
-  # Append fallback hint for daemons that ignore --action (e.g., xfce4-notifyd)
   if [[ "${XDG_CURRENT_DESKTOP:-}" == *XFCE* ]]; then
     body+=$'\n\nRun `ram-rescue open` to launch the monitor.'
   fi
 
-  # notify-send --wait blocks until the notification is closed.
-  # If an action is clicked, its key prints on stdout.
-  # GNOME ignores --expire-time for critical notifications and most others,
-  # so we cap blocking time with `timeout` — the user has 45s to click before
-  # the script moves on (the notification itself may linger in the panel).
   action=$(timeout 45s notify-send \
     --app-name=ram-rescue \
     --urgency=critical \
@@ -138,7 +268,7 @@ fire_alert() {
     --expire-time=30000 \
     --action="open=Open Monitor" \
     --action="snooze=Snooze 30m" \
-    "Low memory: ${MEM_PCT}% available" \
+    "$title" \
     "$body" 2>/dev/null) || action=""
 
   case "$action" in
@@ -179,15 +309,27 @@ main() {
 
 case "${1:-}" in
   --version) echo "ram-rescue $VERSION" ;;
+  --apps)
+    read_memory
+    severity=$(severity_emoji "$MEM_PCT")
+    printf '%s Memory: %d%% available (%d MB free of %d MB)\n\nTop apps:\n\n' \
+      "$severity" "$MEM_PCT" "$((MEM_AVAIL_KB / 1024))" "$((MEM_TOTAL_KB / 1024))"
+    top_apps
+    ;;
   --help)
     cat <<'EOF'
 ram-rescue — low-memory alerter for Linux desktops.
 
-Invoked periodically by the ram-rescue.timer systemd-user unit.
-Reads /proc/meminfo and fires a desktop notification when MemAvailable
-drops below the configured threshold.
+Invoked periodically by the ram-rescue.timer systemd-user unit. Reads
+/proc/meminfo and fires a desktop notification when MemAvailable drops
+below the configured threshold.
 
 Use `ram-rescue` (the CLI) for status, test, and config commands.
+
+Flags:
+  --apps      Print the grouped top-apps view to stdout (no notification)
+  --version   Print version
+  --help      This message
 
 Env vars:
   MEMAVAILABLE_OVERRIDE=<kB>   force a low-memory condition for testing

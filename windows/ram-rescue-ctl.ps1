@@ -1,6 +1,6 @@
 # ram-rescue-ctl.ps1 - user-facing CLI (Windows)
 
-$Version = '0.2.0'
+$Version = '0.3.0'
 $Prefix = Join-Path $env:LOCALAPPDATA 'ram-rescue'
 $ConfigDir = $Prefix
 $ConfigFile = Join-Path $ConfigDir 'config.ps1'
@@ -16,6 +16,7 @@ Usage: ram-rescue <command>
 
 Commands:
   status              Show current memory state and scheduled task status
+  apps                Show top apps grouped by name (no notification)
   test                Force a low-memory alert
   open                Launch Task Manager
   snooze [SECONDS]    Suppress alerts for N seconds (default: 1800)
@@ -78,6 +79,10 @@ function Cmd-Test {
   Remove-Item Env:\MEMAVAILABLE_OVERRIDE
 }
 
+function Cmd-Apps {
+  & (Join-Path $Prefix 'ram-rescue.ps1') '--apps'
+}
+
 function Cmd-Open { Start-Process taskmgr }
 
 function Cmd-Snooze {
@@ -111,6 +116,7 @@ function Cmd-Uninstall {
 
 switch ($args[0]) {
   'status'    { Cmd-Status }
+  'apps'      { Cmd-Apps }
   'test'      { Cmd-Test }
   'open'      { Cmd-Open }
   'snooze'    { Cmd-Snooze -DurationSec ([int]($args[1] | ForEach-Object { if ($_) { $_ } else { 1800 } })) }
