@@ -22,19 +22,29 @@ jobs:
       - name: shellcheck
         run: |
           shellcheck --severity=warning \
-            bin/ram-rescue \
-            bin/ram-rescue-ctl \
             install.sh \
-            uninstall.sh \
-            test/fake-low-mem.sh \
-            test/shellcheck.sh
+            linux/bin/ram-rescue \
+            linux/bin/ram-rescue-ctl \
+            linux/install.sh \
+            linux/uninstall.sh \
+            linux/test/fake-low-mem.sh \
+            linux/test/shellcheck.sh \
+            macos/bin/ram-rescue \
+            macos/bin/ram-rescue-ctl \
+            macos/install.sh \
+            macos/uninstall.sh
 
       - name: shfmt --diff
         run: |
           shfmt -d -i 2 -ci \
-            bin/ram-rescue \
-            bin/ram-rescue-ctl \
             install.sh \
-            uninstall.sh \
-            test/fake-low-mem.sh \
-            test/shellcheck.sh
+            linux/bin/ram-rescue \
+            linux/bin/ram-rescue-ctl \
+            linux/install.sh \
+            linux/uninstall.sh \
+            linux/test/fake-low-mem.sh \
+            linux/test/shellcheck.sh \
+            macos/bin/ram-rescue \
+            macos/bin/ram-rescue-ctl \
+            macos/install.sh \
+            macos/uninstall.sh

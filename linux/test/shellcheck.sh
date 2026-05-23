@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 if ! command -v shellcheck >/dev/null 2>&1; then
   echo "shellcheck not installed. Install with: sudo apt install shellcheck" >&2
@@ -11,12 +11,17 @@ if ! command -v shellcheck >/dev/null 2>&1; then
 fi
 
 files=(
-  bin/ram-rescue
-  bin/ram-rescue-ctl
   install.sh
-  uninstall.sh
-  test/fake-low-mem.sh
-  test/shellcheck.sh
+  linux/bin/ram-rescue
+  linux/bin/ram-rescue-ctl
+  linux/install.sh
+  linux/uninstall.sh
+  linux/test/fake-low-mem.sh
+  linux/test/shellcheck.sh
+  macos/bin/ram-rescue
+  macos/bin/ram-rescue-ctl
+  macos/install.sh
+  macos/uninstall.sh
 )
 
 echo "==> Running shellcheck on ${#files[@]} files..."

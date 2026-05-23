@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# ram-rescue-ctl (macOS) — user-facing CLI.
+
+set -euo pipefail
+
+VERSION="0.2.0"
+PREFIX="$HOME/Library/Application Support/ram-rescue"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ram-rescue"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/ram-rescue"
+QUIET_UNTIL_FILE="$STATE_DIR/quiet-until"
+LAUNCHAGENT_DIR="$HOME/Library/LaunchAgents"
+PLIST_NAME="com.tgambit65.ram-rescue.plist"
+
+usage() {
+  cat <<EOF
+ram-rescue $VERSION — low-RAM alerter (macOS)
+
+Usage: ram-rescue <command>
+
+Commands:
+  status              Show current memory state and launchd agent status
+  test                Force a low-memory alert (uses MEMAVAILABLE_OVERRIDE)
+  open                Launch Activity Monitor
+  snooze [SECONDS]    Suppress alerts for N seconds (default: 1800)
+  unsnooze            Clear any active snooze
+  logs [N]            Show last N log lines from system log (default: 20)
+  version             Print version
+  uninstall           Remove ram-rescue
+  help                This message
+EOF
+}
+
+mem_avail_kb() {
+  local page_size free inactive spec
+  page_size=$(sysctl -n hw.pagesize)
+  free=$(vm_stat | awk '/Pages free:/{gsub(/\.$/,"",$3); print $3}')
+  inactive=$(vm_stat | awk '/Pages inactive:/{gsub(/\.$/,"",$3); print $3}')
+  spec=$(vm_stat | awk '/Pages speculative:/{gsub(/\.$/,"",$3); print $3}')
+  echo $(((free + inactive + spec) * page_size / 1024))
+}
+
+cmd_status() {
+  local total_kb avail_kb pct
+  total_kb=$(($(sysctl -n hw.memsize) / 1024))
+  avail_kb=$(mem_avail_kb)
+  pct=$((avail_kb * 100 / total_kb))
+  echo "Memory:         ${pct}% available (${avail_kb} kB / ${total_kb} kB)"
+
+  # shellcheck disable=SC1091
+  [[ -r "$CONFIG_DIR/config" ]] && source "$CONFIG_DIR/config"
+  echo "Threshold:      ${THRESHOLD_PCT:-15}%"
+
+  if launchctl list | grep -q "com.tgambit65.ram-rescue"; then
+    echo "Agent:          loaded"
+  else
+    echo "Agent:          not loaded"
+  fi
+
+  if [[ -f "$QUIET_UNTIL_FILE" ]]; then
+    local quiet_until now remaining
+    quiet_until=$(<"$QUIET_UNTIL_FILE")
+    now=$(date +%s)
+    remaining=$((quiet_until - now))
+    if ((remaining > 0)); then
+      echo "Snoozed:        ${remaining}s remaining (until $(date -r "$quiet_until" '+%H:%M:%S'))"
+    else
+      echo "Snoozed:        no"
+    fi
+  else
+    echo "Snoozed:        no"
+  fi
+}
+
+cmd_test() {
+  echo "Firing test alert (MEMAVAILABLE_OVERRIDE=100000)..."
+  MEMAVAILABLE_OVERRIDE=100000 "$PREFIX/ram-rescue"
+}
+
+cmd_open() { open -a "Activity Monitor"; }
+
+cmd_snooze() {
+  local duration=${1:-1800}
+  mkdir -p "$STATE_DIR"
+  echo "$(($(date +%s) + duration))" >"$QUIET_UNTIL_FILE"
+  echo "Snoozed for ${duration}s."
+}
+
+cmd_unsnooze() {
+  rm -f "$QUIET_UNTIL_FILE"
+  echo "Snooze cleared."
+}
+
+cmd_logs() {
+  local n=${1:-20}
+  log show --predicate 'process == "logger" AND eventMessage CONTAINS "ram-rescue"' --info --last 1h 2>/dev/null | tail -n "$n"
+}
+
+cmd_uninstall() {
+  echo "Uninstalling ram-rescue..."
+  launchctl unload "$LAUNCHAGENT_DIR/$PLIST_NAME" 2>/dev/null || true
+  rm -f "$LAUNCHAGENT_DIR/$PLIST_NAME"
+  rm -rf "$PREFIX"
+  rm -f "$HOME/.local/bin/ram-rescue"
+  echo "Removed launchd agent, scripts, and CLI link."
+  echo "Config and state preserved at $CONFIG_DIR and $STATE_DIR."
+}
+
+case "${1:-help}" in
+  status) cmd_status ;;
+  test) cmd_test ;;
+  open) cmd_open ;;
+  snooze) shift; cmd_snooze "$@" ;;
+  unsnooze) cmd_unsnooze ;;
+  logs) shift; cmd_logs "$@" ;;
+  version | --version) echo "ram-rescue $VERSION" ;;
+  uninstall) cmd_uninstall ;;
+  help | --help | -h) usage ;;
+  *)
+    echo "Unknown command: $1" >&2
+    usage >&2
+    exit 1
+    ;;
+esac
