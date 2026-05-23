@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# ram-rescue-overlay — on-demand kill picker.
+# Hotkey-launched zenity checklist showing all apps grouped by name.
+# User checks apps to kill, confirms, SIGTERM is sent. Exits when closed.
+#
+# RAM cost: 0 MB resident, ~5-15 MB while visible (just zenity + this shell).
+# Bind to a GNOME keyboard shortcut: Settings -> Keyboard -> Custom Shortcuts.
+# Suggested command:   ram-rescue overlay
+# Suggested binding:   Super+R  (or anything you like)
+
+set -euo pipefail
+
+VERSION="0.4.0"
+
+# Locate the classifier library (mirror logic from ram-rescue).
+_RR_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -r "$_RR_SCRIPT_DIR/../lib/classify.sh" ]]; then
+  # shellcheck disable=SC1091
+  source "$_RR_SCRIPT_DIR/../lib/classify.sh"
+elif [[ -r "$_RR_SCRIPT_DIR/classify.sh" ]]; then
+  # shellcheck disable=SC1091
+  source "$_RR_SCRIPT_DIR/classify.sh"
+else
+  echo "ERROR: classify.sh not found alongside ram-rescue-overlay" >&2
+  exit 1
+fi
+
+if ! command -v zenity >/dev/null 2>&1; then
+  echo "ERROR: zenity not installed. Install with: sudo apt install zenity" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------- snapshot
+declare -A APP_RSS APP_COUNT APP_EMOJI APP_DESC APP_CAT
+APP_SORTED=""
+build_app_table
+
+# Memory header info.
+mem_total_kb=$(awk '/^MemTotal:/{print $2}' /proc/meminfo)
+mem_avail_kb=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo)
+mem_pct=$((mem_avail_kb * 100 / mem_total_kb))
+severity=$(severity_emoji "$mem_pct")
+
+# ---------------------------------------------------------------- build rows
+# zenity --list --checklist expects FALSE/TRUE then values per column.
+# Columns: [hidden id] [Kill checkbox] [App] [Size] [Description]
+# Skip system/shell categories — those are "keep alive" anyway.
+rows=()
+chrome_tabs=-1
+while IFS=$'\t' read -r rss name; do
+  [[ -z "$name" ]] && continue
+
+  cat="${APP_CAT[$name]:-other}"
+  case "$cat" in
+    system | shell) continue ;;
+  esac
+
+  emoji="${APP_EMOJI[$name]:-📦}"
+  desc="${APP_DESC[$name]:-Process}"
+  count="${APP_COUNT[$name]:-1}"
+  size=$(format_size "$rss")
+
+  # Show tab count for browsers.
+  if [[ "$name" == "Chrome" || "$name" == "Chromium" || "$name" == "Brave" ]]; then
+    if ((chrome_tabs < 0)); then chrome_tabs=$(count_chrome_tabs); fi
+    if ((chrome_tabs > 0)); then
+      desc="${desc} · ~${chrome_tabs} tabs"
+    fi
+  fi
+
+  if ((count > 1)); then
+    desc="${desc} · ${count} procs"
+  fi
+
+  rows+=(FALSE "${emoji} ${name}" "${size}" "${desc}")
+done <<<"$APP_SORTED"
+
+if ((${#rows[@]} == 0)); then
+  zenity --info --title="ram-rescue" --text="No killable apps found." 2>/dev/null
+  exit 0
+fi
+
+# ---------------------------------------------------------------- show dialog
+text="${severity} Memory: ${mem_pct}% available · $((mem_avail_kb / 1024)) MB free of $((mem_total_kb / 1024)) MB
+
+Check the apps you want to close, then click OK."
+
+# Capture selection. zenity returns CSV-ish with `|` separator (zenity 4.x default).
+# Disable pipefail so a non-zero exit from zenity (user clicked Cancel) doesn't kill us.
+set +e
+selection=$(zenity --list --checklist \
+  --title="ram-rescue · pick what to close" \
+  --text="$text" \
+  --width=700 --height=500 \
+  --column="Kill" \
+  --column="App" \
+  --column="Size" \
+  --column="Description" \
+  --separator='|' \
+  "${rows[@]}" 2>/dev/null)
+rc=$?
+set -e
+
+# rc=1 means user clicked Cancel or closed the window — exit silently.
+((rc != 0)) && exit 0
+[[ -z "$selection" ]] && exit 0
+
+# selection looks like "🌐 Chrome|🐍 Python|..."
+# Strip the leading "emoji " from each entry to get just app names.
+IFS='|' read -ra picked_raw <<<"$selection"
+picked=()
+for entry in "${picked_raw[@]}"; do
+  # Drop everything up to the first space (the emoji prefix).
+  picked+=("${entry#* }")
+done
+
+# ---------------------------------------------------------------- confirm
+preview=$(printf '%s\n' "${picked[@]}" | sed 's/^/  · /')
+nproc_total=0
+for app in "${picked[@]}"; do
+  nproc_total=$((nproc_total + ${APP_COUNT[$app]:-0}))
+done
+
+if ! zenity --question --title="ram-rescue · confirm" \
+  --text="About to send SIGTERM to ${nproc_total} process(es) across these apps:
+
+${preview}
+
+Continue?" \
+  --width=400 2>/dev/null; then
+  exit 0
+fi
+
+# ---------------------------------------------------------------- kill
+killed=0
+failed=0
+warnings=()
+while IFS=' ' read -r pid comm; do
+  [[ -z "$comm" ]] && continue
+  info=$(classify_app "$comm")
+  app_name=$(printf '%s' "$info" | cut -f1)
+  for target in "${picked[@]}"; do
+    if [[ "$app_name" == "$target" ]]; then
+      if kill -TERM "$pid" 2>/dev/null; then
+        killed=$((killed + 1))
+      else
+        failed=$((failed + 1))
+      fi
+      break
+    fi
+  done
+done < <(ps -eo pid,comm --no-headers)
+
+# Log to journald for audit.
+logger -t ram-rescue-overlay "killed=$killed failed=$failed apps=$(IFS=,; echo "${picked[*]}")"
+
+# ---------------------------------------------------------------- result
+result_text="Sent SIGTERM to ${killed} process(es)."
+if ((failed > 0)); then
+  result_text+="
+${failed} kill(s) failed (permission denied or already exited)."
+fi
+
+zenity --info --title="ram-rescue · done" \
+  --text="$result_text" \
+  --width=350 2>/dev/null || true

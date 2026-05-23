@@ -81,6 +81,8 @@ install_files() {
   mkdir -p "$PREFIX" "$CONFIG_DIR" "$SYSTEMD_USER_DIR" "$LOCAL_BIN"
   install -m755 "$SRC_DIR/bin/ram-rescue" "$PREFIX/ram-rescue"
   install -m755 "$SRC_DIR/bin/ram-rescue-ctl" "$PREFIX/ram-rescue-ctl"
+  install -m755 "$SRC_DIR/bin/ram-rescue-overlay" "$PREFIX/ram-rescue-overlay"
+  install -m644 "$SRC_DIR/lib/classify.sh" "$PREFIX/classify.sh"
   ln -sf "$PREFIX/ram-rescue-ctl" "$LOCAL_BIN/ram-rescue"
 
   # Render systemd templates with @PREFIX@ substitution.

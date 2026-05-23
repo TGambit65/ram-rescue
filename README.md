@@ -160,6 +160,7 @@ Override with `MONITOR_CMD="..."` in your config.
 ```
 ram-rescue status              Show current memory state and agent status
 ram-rescue apps                Show top apps grouped by name (no notification)
+ram-rescue overlay             Open the on-demand kill picker (Linux v0.4.0+)
 ram-rescue test                Force a low-memory alert
 ram-rescue open                Launch the system monitor / Activity Monitor / Task Manager
 ram-rescue snooze [SECONDS]    Suppress alerts for N seconds (default: 1800)
@@ -171,6 +172,29 @@ ram-rescue help                This message
 ```
 
 `ram-rescue apps` prints the same grouped view that the notification shows, but to your terminal — great for ad-hoc inspection or scripting.
+
+## Hotkey-launched kill picker (Linux, v0.4.0+)
+
+The `overlay` subcommand opens a zenity checklist of all running apps, lets you tick the ones to close, confirms, then sends SIGTERM to each. Closes itself when done.
+
+**Bind to a GNOME keyboard shortcut:**
+
+1. Settings → Keyboard → View and Customize Shortcuts → Custom Shortcuts → `+`
+2. Name: `ram-rescue overlay`
+3. Command: `/home/YOUR_USER/.local/bin/ram-rescue overlay` (use the full path — GNOME's shortcut runner doesn't always inherit your PATH)
+4. Shortcut: pick anything (suggestion: `Super+R`)
+
+Now `Super+R` (or whatever you chose) anywhere on the desktop opens the picker.
+
+### RAM cost — honest numbers
+
+The overlay is **0 MB resident** (nothing runs between invocations) but **~200 MB while visible** because zenity 4.x on Ubuntu 24 pulls in GTK4 + GSK + Cairo + Pango + ~100 shared libraries. That's roughly the same as `gnome-system-monitor` itself (~215 MB visible), so the kill-picker isn't more expensive than what "Open Monitor" already launches.
+
+If you want a lighter alternative, two options exist:
+- **Python + Tkinter** rewrite: ~20 MB visible. Tracked for v0.4.1.
+- **TUI** (whiptail/dialog inside a terminal): ~5 MB + ~50 MB for the terminal. Lighter overall but loses the "popup over any window" feel.
+
+System-category processes (GNOME shell, X server, systemd, audio daemons, shells) are filtered out of the picker since killing them takes down your session.
 
 ## Troubleshooting
 

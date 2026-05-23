@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-VERSION="0.3.0"
+VERSION="0.4.0"
 PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/ram-rescue"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ram-rescue"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/ram-rescue"
@@ -19,6 +19,7 @@ Usage: ram-rescue <command>
 Commands:
   status              Show current memory state and timer status
   apps                Show top apps grouped by name (no notification)
+  overlay             Open the on-demand kill picker (zenity checklist)
   test                Force a low-memory alert (uses MEMAVAILABLE_OVERRIDE)
   open                Launch the system monitor sorted by memory
   snooze [SECONDS]    Suppress alerts for N seconds (default: 1800)
@@ -72,6 +73,15 @@ cmd_test() {
 
 cmd_apps() {
   "$PREFIX/ram-rescue" --apps
+}
+
+cmd_overlay() {
+  if [[ ! -x "$PREFIX/ram-rescue-overlay" ]]; then
+    echo "ERROR: ram-rescue-overlay not installed at $PREFIX/ram-rescue-overlay" >&2
+    echo "Reinstall with: $PREFIX/../ram-rescue/install.sh or curl|bash" >&2
+    exit 1
+  fi
+  exec "$PREFIX/ram-rescue-overlay"
 }
 
 cmd_open() {
@@ -131,6 +141,7 @@ cmd_uninstall() {
 case "${1:-help}" in
   status) cmd_status ;;
   apps) cmd_apps ;;
+  overlay) cmd_overlay ;;
   test) cmd_test ;;
   open) cmd_open ;;
   snooze) shift; cmd_snooze "$@" ;;

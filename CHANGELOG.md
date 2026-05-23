@@ -4,6 +4,23 @@ All notable changes to ram-rescue will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] — 2026-05-23
+
+Hotkey-launched kill picker (Linux). Prototype using zenity.
+
+### Added
+- **`ram-rescue overlay`**: on-demand zenity checklist showing all running apps grouped by name (same classifier as the notification). User ticks apps to kill, confirms, and SIGTERM is sent to each matching process. Closes itself when done.
+- **Shared classifier library** at `linux/lib/classify.sh`: `classify_app`, `count_chrome_tabs`, `severity_emoji`, `build_app_table`, `format_size`. Sourced by both `ram-rescue` and `ram-rescue-overlay` so adding new app patterns only needs one edit.
+- README documents the GNOME keyboard-shortcut binding (`Settings → Keyboard → Custom Shortcuts → command: ram-rescue overlay`).
+
+### Footprint (honest measurement, Ubuntu 24 + GNOME 46)
+- **Resident: 0 MB** (no daemon between invocations).
+- **Visible: ~200 MB** when the overlay is open. Zenity 4.x in Ubuntu 24 pulls in GTK4 + GSK + Cairo + Pango + ~100 shared libraries — heavier than the 5-15 MB initially estimated. For reference, `gnome-system-monitor` (what "Open Monitor" launches) is ~215 MB visible, so the overlay is in the same tier as the existing flow.
+
+### Known limitations / planned for v0.4.1
+- Linux-only. macOS will need `osascript choose from list`; Windows will need `Out-GridView`.
+- Tkinter alternative would drop visible cost to ~20 MB. Tracked.
+
 ## [0.3.0] — 2026-05-23
 
 App grouping + visual refresh. The notification now shows top *apps* (not raw processes), each with an emoji indicator, a one-line summary, and — for browsers — an approximate tab count.
