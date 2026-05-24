@@ -9,7 +9,10 @@ REPO_URL="https://github.com/TGambit65/ram-rescue"
 BRANCH="${RAM_RESCUE_BRANCH:-main}"
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
-die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+die() {
+  printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2
+  exit 1
+}
 
 uname_s=$(uname -s 2>/dev/null || echo unknown)
 

@@ -387,7 +387,10 @@ case "${1:-}" in
     top_apps
     ;;
   --why) why_view ;;
-  --stats) shift; stats_view "${1:-7}" ;;
+  --stats)
+    shift
+    stats_view "${1:-7}"
+    ;;
   --help)
     cat <<'EOF'
 ram-rescue — low-memory alerter for Linux desktops.

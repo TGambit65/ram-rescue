@@ -95,10 +95,10 @@ normalize_accel() {
     else
       case "${p,,}" in
         super | meta | win | windows) out+="<Super>" ;;
-        ctrl | control)               out+="<Control>" ;;
-        alt)                          out+="<Alt>" ;;
-        shift)                        out+="<Shift>" ;;
-        *)                            out+="<$p>" ;;
+        ctrl | control) out+="<Control>" ;;
+        alt) out+="<Alt>" ;;
+        shift) out+="<Shift>" ;;
+        *) out+="<$p>" ;;
       esac
     fi
   done

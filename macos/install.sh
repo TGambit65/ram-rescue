@@ -14,7 +14,10 @@ PLIST_NAME="com.tgambit65.ram-rescue.plist"
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mWARN:\033[0m %s\n' "$*" >&2; }
-die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+die() {
+  printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2
+  exit 1
+}
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"

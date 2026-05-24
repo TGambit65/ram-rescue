@@ -115,9 +115,15 @@ case "${1:-help}" in
   apps) cmd_apps ;;
   test) cmd_test ;;
   open) cmd_open ;;
-  snooze) shift; cmd_snooze "$@" ;;
+  snooze)
+    shift
+    cmd_snooze "$@"
+    ;;
   unsnooze) cmd_unsnooze ;;
-  logs) shift; cmd_logs "$@" ;;
+  logs)
+    shift
+    cmd_logs "$@"
+    ;;
   version | --version) echo "ram-rescue $VERSION" ;;
   uninstall) cmd_uninstall ;;
   help | --help | -h) usage ;;

@@ -60,9 +60,12 @@ Examples:
 EOF
 }
 
-say()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
+say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mWARN:\033[0m %s\n' "$*" >&2; }
-die()  { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+die() {
+  printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2
+  exit 1
+}
 
 check_prereqs() {
   [[ -x "$RAM_RESCUE_BIN" ]] || die "ram-rescue not installed at $RAM_RESCUE_BIN (run install.sh first)"
@@ -93,7 +96,7 @@ check_prereqs() {
   total=$(awk '/^MemTotal:/{print $2}' /proc/meminfo)
   avail=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo)
   pct=$((avail * 100 / total))
-  printf '  %d%% available (%d MB / %d MB)\n' "$pct" "$((avail/1024))" "$((total/1024))"
+  printf '  %d%% available (%d MB / %d MB)\n' "$pct" "$((avail / 1024))" "$((total / 1024))"
 }
 
 mode_hero() {
@@ -210,10 +213,22 @@ mode_clean() {
 }
 
 case "${1:-help}" in
-  hero)   shift; check_prereqs >/dev/null; mode_hero "${1:-12}" ;;
-  gif)    shift; check_prereqs >/dev/null; mode_gif "${1:-12}" ;;
-  check)  check_prereqs ;;
-  clean)  mode_clean ;;
+  hero)
+    shift
+    check_prereqs >/dev/null
+    mode_hero "${1:-12}"
+    ;;
+  gif)
+    shift
+    check_prereqs >/dev/null
+    mode_gif "${1:-12}"
+    ;;
+  check) check_prereqs ;;
+  clean) mode_clean ;;
   help | --help | -h | "") usage ;;
-  *)      echo "Unknown mode: $1" >&2; usage >&2; exit 1 ;;
+  *)
+    echo "Unknown mode: $1" >&2
+    usage >&2
+    exit 1
+    ;;
 esac

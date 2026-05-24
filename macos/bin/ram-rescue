@@ -63,75 +63,110 @@ set_quiet_window() {
 classify_app() {
   case "$1" in
     "Google Chrome" | "Google Chrome Helper"* | "Chromium"*)
-      printf '%s\t%s\t%s\t%s\n' "Chrome" "🌐" "Web browser" "browser" ;;
+      printf '%s\t%s\t%s\t%s\n' "Chrome" "🌐" "Web browser" "browser"
+      ;;
     Safari | "Safari Helper"* | "com.apple.WebKit"*)
-      printf '%s\t%s\t%s\t%s\n' "Safari" "🧭" "Web browser" "browser" ;;
+      printf '%s\t%s\t%s\t%s\n' "Safari" "🧭" "Web browser" "browser"
+      ;;
     firefox*)
-      printf '%s\t%s\t%s\t%s\n' "Firefox" "🦊" "Web browser" "browser" ;;
+      printf '%s\t%s\t%s\t%s\n' "Firefox" "🦊" "Web browser" "browser"
+      ;;
     "Brave Browser"* | Brave*)
-      printf '%s\t%s\t%s\t%s\n' "Brave" "🦁" "Web browser" "browser" ;;
+      printf '%s\t%s\t%s\t%s\n' "Brave" "🦁" "Web browser" "browser"
+      ;;
     "Code" | "Visual Studio Code"* | "Code Helper"*)
-      printf '%s\t%s\t%s\t%s\n' "VS Code" "📝" "Code editor" "editor" ;;
+      printf '%s\t%s\t%s\t%s\n' "VS Code" "📝" "Code editor" "editor"
+      ;;
     Cursor*)
-      printf '%s\t%s\t%s\t%s\n' "Cursor" "✨" "AI code editor" "editor" ;;
+      printf '%s\t%s\t%s\t%s\n' "Cursor" "✨" "AI code editor" "editor"
+      ;;
     claude | "Claude")
-      printf '%s\t%s\t%s\t%s\n' "Claude Code" "🤖" "Anthropic AI agent" "ai" ;;
+      printf '%s\t%s\t%s\t%s\n' "Claude Code" "🤖" "Anthropic AI agent" "ai"
+      ;;
     aider)
-      printf '%s\t%s\t%s\t%s\n' "Aider" "🤖" "AI pair programmer" "ai" ;;
+      printf '%s\t%s\t%s\t%s\n' "Aider" "🤖" "AI pair programmer" "ai"
+      ;;
     Slack | "Slack Helper"*)
-      printf '%s\t%s\t%s\t%s\n' "Slack" "💬" "Team chat" "chat" ;;
+      printf '%s\t%s\t%s\t%s\n' "Slack" "💬" "Team chat" "chat"
+      ;;
     Discord*)
-      printf '%s\t%s\t%s\t%s\n' "Discord" "🎮" "Chat app" "chat" ;;
+      printf '%s\t%s\t%s\t%s\n' "Discord" "🎮" "Chat app" "chat"
+      ;;
     Telegram*)
-      printf '%s\t%s\t%s\t%s\n' "Telegram" "✈️" "Chat app" "chat" ;;
+      printf '%s\t%s\t%s\t%s\n' "Telegram" "✈️" "Chat app" "chat"
+      ;;
     Spotify*)
-      printf '%s\t%s\t%s\t%s\n' "Spotify" "🎵" "Music streaming" "media" ;;
+      printf '%s\t%s\t%s\t%s\n' "Spotify" "🎵" "Music streaming" "media"
+      ;;
     zoom.us | "zoom.us Helper"*)
-      printf '%s\t%s\t%s\t%s\n' "Zoom" "🎥" "Video calls" "media" ;;
+      printf '%s\t%s\t%s\t%s\n' "Zoom" "🎥" "Video calls" "media"
+      ;;
     OBS* | obs)
-      printf '%s\t%s\t%s\t%s\n' "OBS Studio" "📹" "Streaming/recording" "media" ;;
+      printf '%s\t%s\t%s\t%s\n' "OBS Studio" "📹" "Streaming/recording" "media"
+      ;;
     VLC | vlc)
-      printf '%s\t%s\t%s\t%s\n' "VLC" "🎬" "Media player" "media" ;;
+      printf '%s\t%s\t%s\t%s\n' "VLC" "🎬" "Media player" "media"
+      ;;
     node | nodejs)
-      printf '%s\t%s\t%s\t%s\n' "Node.js" "⚙️" "JavaScript runtime" "runtime" ;;
+      printf '%s\t%s\t%s\t%s\n' "Node.js" "⚙️" "JavaScript runtime" "runtime"
+      ;;
     npm | "npm exec"* | "npm run"*)
-      printf '%s\t%s\t%s\t%s\n' "npm" "📦" "npm-managed Node process" "runtime" ;;
+      printf '%s\t%s\t%s\t%s\n' "npm" "📦" "npm-managed Node process" "runtime"
+      ;;
     "next-server"*)
-      printf '%s\t%s\t%s\t%s\n' "Next.js dev" "▲" "Next.js development server" "server" ;;
+      printf '%s\t%s\t%s\t%s\n' "Next.js dev" "▲" "Next.js development server" "server"
+      ;;
     "vite"* | esbuild)
-      printf '%s\t%s\t%s\t%s\n' "Vite/esbuild" "⚡" "Frontend dev tooling" "server" ;;
+      printf '%s\t%s\t%s\t%s\n' "Vite/esbuild" "⚡" "Frontend dev tooling" "server"
+      ;;
     python | python3 | python3.* | python2 | python2.*)
-      printf '%s\t%s\t%s\t%s\n' "Python" "🐍" "Python interpreter" "runtime" ;;
+      printf '%s\t%s\t%s\t%s\n' "Python" "🐍" "Python interpreter" "runtime"
+      ;;
     uvicorn)
-      printf '%s\t%s\t%s\t%s\n' "uvicorn" "📡" "Python ASGI web server" "server" ;;
+      printf '%s\t%s\t%s\t%s\n' "uvicorn" "📡" "Python ASGI web server" "server"
+      ;;
     gunicorn)
-      printf '%s\t%s\t%s\t%s\n' "gunicorn" "📡" "Python WSGI web server" "server" ;;
+      printf '%s\t%s\t%s\t%s\n' "gunicorn" "📡" "Python WSGI web server" "server"
+      ;;
     java | javaw)
-      printf '%s\t%s\t%s\t%s\n' "Java" "☕" "JVM application" "runtime" ;;
+      printf '%s\t%s\t%s\t%s\n' "Java" "☕" "JVM application" "runtime"
+      ;;
     ruby)
-      printf '%s\t%s\t%s\t%s\n' "Ruby" "💎" "Ruby interpreter" "runtime" ;;
+      printf '%s\t%s\t%s\t%s\n' "Ruby" "💎" "Ruby interpreter" "runtime"
+      ;;
     rust | cargo | rustc)
-      printf '%s\t%s\t%s\t%s\n' "Rust" "🦀" "Rust toolchain" "runtime" ;;
+      printf '%s\t%s\t%s\t%s\n' "Rust" "🦀" "Rust toolchain" "runtime"
+      ;;
     Docker* | docker | dockerd | com.docker.*)
-      printf '%s\t%s\t%s\t%s\n' "Docker" "🐳" "Container runtime" "system" ;;
+      printf '%s\t%s\t%s\t%s\n' "Docker" "🐳" "Container runtime" "system"
+      ;;
     postgres | postgresql)
-      printf '%s\t%s\t%s\t%s\n' "PostgreSQL" "🐘" "Database" "server" ;;
+      printf '%s\t%s\t%s\t%s\n' "PostgreSQL" "🐘" "Database" "server"
+      ;;
     mysqld | mariadbd)
-      printf '%s\t%s\t%s\t%s\n' "MySQL" "🐬" "Database" "server" ;;
+      printf '%s\t%s\t%s\t%s\n' "MySQL" "🐬" "Database" "server"
+      ;;
     "redis-server")
-      printf '%s\t%s\t%s\t%s\n' "Redis" "📕" "In-memory database" "server" ;;
+      printf '%s\t%s\t%s\t%s\n' "Redis" "📕" "In-memory database" "server"
+      ;;
     mongod)
-      printf '%s\t%s\t%s\t%s\n' "MongoDB" "🍃" "Document database" "server" ;;
+      printf '%s\t%s\t%s\t%s\n' "MongoDB" "🍃" "Document database" "server"
+      ;;
     Finder | Dock | SystemUIServer | WindowServer | loginwindow | launchd)
-      printf '%s\t%s\t%s\t%s\n' "macOS UI" "🖥️" "System UI (keep alive)" "system" ;;
+      printf '%s\t%s\t%s\t%s\n' "macOS UI" "🖥️" "System UI (keep alive)" "system"
+      ;;
     "kernel_task" | "mds"* | "mdworker"* | "spotlightd" | "cloudd")
-      printf '%s\t%s\t%s\t%s\n' "macOS background" "⚙️" "System services (keep alive)" "system" ;;
+      printf '%s\t%s\t%s\t%s\n' "macOS background" "⚙️" "System services (keep alive)" "system"
+      ;;
     bash | zsh | sh | fish)
-      printf '%s\t%s\t%s\t%s\n' "Shell sessions" "🐚" "Login shells & subshells" "shell" ;;
+      printf '%s\t%s\t%s\t%s\n' "Shell sessions" "🐚" "Login shells & subshells" "shell"
+      ;;
     Terminal | iTerm* | Warp | Alacritty | kitty)
-      printf '%s\t%s\t%s\t%s\n' "Terminal" "🖥️" "Terminal emulator" "app" ;;
+      printf '%s\t%s\t%s\t%s\n' "Terminal" "🖥️" "Terminal emulator" "app"
+      ;;
     *)
-      printf '%s\t%s\t%s\t%s\n' "$1" "📦" "Process" "other" ;;
+      printf '%s\t%s\t%s\t%s\n' "$1" "📦" "Process" "other"
+      ;;
   esac
 }
 

@@ -156,7 +156,10 @@ while IFS=' ' read -r pid comm; do
 done < <(ps -eo pid,comm --no-headers)
 
 # Log to journald for audit.
-logger -t ram-rescue-overlay "killed=$killed failed=$failed apps=$(IFS=,; echo "${picked[*]}")"
+logger -t ram-rescue-overlay "killed=$killed failed=$failed apps=$(
+  IFS=,
+  echo "${picked[*]}"
+)"
 
 # ---------------------------------------------------------------- result
 result_text="Sent SIGTERM to ${killed} process(es)."
