@@ -25,10 +25,12 @@ jobs:
             install.sh \
             linux/bin/ram-rescue \
             linux/bin/ram-rescue-ctl \
+            linux/bin/ram-rescue-overlay \
             linux/install.sh \
             linux/uninstall.sh \
             linux/test/fake-low-mem.sh \
             linux/test/shellcheck.sh \
+            linux/test/make-demo.sh \
             macos/bin/ram-rescue \
             macos/bin/ram-rescue-ctl \
             macos/install.sh \
@@ -40,10 +42,12 @@ jobs:
             install.sh \
             linux/bin/ram-rescue \
             linux/bin/ram-rescue-ctl \
+            linux/bin/ram-rescue-overlay \
             linux/install.sh \
             linux/uninstall.sh \
             linux/test/fake-low-mem.sh \
             linux/test/shellcheck.sh \
+            linux/test/make-demo.sh \
             macos/bin/ram-rescue \
             macos/bin/ram-rescue-ctl \
             macos/install.sh \
