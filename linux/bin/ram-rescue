@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.5.1"
+VERSION="0.5.2"
 
 # Locate and source the classifier library.
 _RR_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -174,10 +174,19 @@ fire_alert() {
       ;;
   esac
 
-  # Extract top 3 app names (drop emoji + middle-dot fields) for stats parsing later.
+  # Extract top 3 app names for stats parsing later. Multi-word app names
+  # ("Claude Code", "systemd & system") must survive both the join and the
+  # `top=` parser. The log line is space-separated key=value, so spaces
+  # *inside* a value would get clipped — encode them as `_` here, decode in
+  # stats_view. Join with `,` after replacing internal spaces.
   top_names=$(printf '%s\n' "$apps" | head -3 |
-    awk -F'·' '{sub(/^ *[^ ]+ /, "", $1); gsub(/[ \t]+$/, "", $1); printf "%s ", $1}' |
-    tr -s ' ' | sed 's/ /,/g; s/,$//')
+    awk -F'·' 'NF {
+      sub(/^ *[^ ]+ /, "", $1);  # strip leading emoji
+      gsub(/[ \t]+$/, "", $1);    # strip trailing whitespace
+      gsub(/ /, "_", $1);          # encode internal spaces
+      printf "%s,", $1
+    }' |
+    sed 's/,$//')
 
   logger -t ram-rescue "alert trigger=$trigger pct=${MEM_PCT} avail=${MEM_AVAIL_KB}kB action=${action:-none} top=${top_names}"
 }
@@ -320,15 +329,17 @@ stats_view() {
   echo ""
 
   # Most-frequent flagged apps (from "top=APP1,APP2,APP3" field on alert lines).
+  # Internal spaces in app names were encoded as `_` by fire_alert — decode here.
   printf 'Most-frequently-flagged apps:\n'
   local top_apps_summary
   top_apps_summary=$(printf '%s\n' "$lines" |
     grep -oE 'top=[^ ]+' |
     sed 's/top=//' |
     tr ',' '\n' |
+    tr '_' ' ' |
     awk 'NF' |
     sort | uniq -c | sort -rn | head -5 |
-    awk '{$1=$1; printf "  %-25s × %d\n", $2, $1}')
+    awk '{n = $1; $1 = ""; sub(/^ /, ""); printf "  %-25s × %d\n", $0, n}')
   if [[ -n "$top_apps_summary" ]]; then
     echo "$top_apps_summary"
   else

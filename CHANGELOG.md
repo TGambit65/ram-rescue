@@ -4,6 +4,12 @@ All notable changes to ram-rescue will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.2] — 2026-05-23
+
+### Fixed
+- **Multi-word app names in the `top=` log field were silently split**. App names with spaces ("Claude Code", "systemd & system", "VS Code") were getting clipped by the `top=...` parser because journald log lines are space-delimited key=value. `stats` ended up counting "Claude" and "Code" as separate apps.
+- Fix: encode internal spaces as `_` when writing the log line (`top=Chrome,Node.js,Claude_Code`), decode `_` back to space when reading in `stats`. Old log lines from v0.5.0–0.5.1 still show split entries until they age out of the journald window.
+
 ## [0.5.1] — 2026-05-23
 
 ### Fixed
