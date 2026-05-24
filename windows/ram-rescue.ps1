@@ -3,7 +3,7 @@
 
 $ErrorActionPreference = 'Stop'
 
-$Version = '0.4.1'
+$Version = '0.4.2'
 
 # ---------------------------------------------------------------- config defaults
 $Global:THRESHOLD_PCT = 15

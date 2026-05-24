@@ -3,14 +3,16 @@
 # Hotkey-launched zenity checklist showing all apps grouped by name.
 # User checks apps to kill, confirms, SIGTERM is sent. Exits when closed.
 #
-# RAM cost: 0 MB resident, ~5-15 MB while visible (just zenity + this shell).
-# Bind to a GNOME keyboard shortcut: Settings -> Keyboard -> Custom Shortcuts.
-# Suggested command:   ram-rescue overlay
-# Suggested binding:   Super+R  (or anything you like)
+# RAM cost: 0 MB resident, ~200 MB visible (zenity 4.x on Ubuntu 24 pulls in
+# GTK4 + ~100 shared libs — same tier as gnome-system-monitor itself).
+# Bind to a GNOME keyboard shortcut via `install.sh --bind-hotkey`, or:
+#   Settings -> Keyboard -> Custom Shortcuts, command: `ram-rescue overlay`.
+# Recommended binding: Ctrl+Alt+R (Super+letter combos collide with GNOME's
+# overlay-key behavior on Super).
 
 set -euo pipefail
 
-VERSION="0.4.1"
+VERSION="0.4.2"
 
 # Locate the classifier library (mirror logic from ram-rescue).
 _RR_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

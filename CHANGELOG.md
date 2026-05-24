@@ -4,6 +4,15 @@ All notable changes to ram-rescue will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.2] — 2026-05-23
+
+Hotkey default changed from `Super+R` to `Ctrl+Alt+R`.
+
+### Fixed
+- **`--bind-hotkey` default**: Super+R turned out to be unreliable on GNOME because the "overlay key" (Super alone) opens the Activities overview with the search field focused. Pressing Super+R fast often registers as Super → overview opens → R types into the search box, *before* the custom Super+R shortcut is recognized. Verified the failure on Ubuntu 24 + GNOME 46 + X11. Any Super+letter combo where the letter starts common app names has the same issue.
+- New default: `Ctrl+Alt+R`. Three-key chord that GNOME never pre-processes — fires every time.
+- Help text and README now explicitly warn against Super+letter combos on GNOME and recommend chords or unused keys (`Pause`, function keys, `Super+Escape`) instead.
+
 ## [0.4.1] — 2026-05-23
 
 `--bind-hotkey` flag on the Linux installer — set up the overlay keyboard shortcut without leaving the terminal.

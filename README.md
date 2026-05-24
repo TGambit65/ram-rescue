@@ -180,8 +180,8 @@ The `overlay` subcommand opens a zenity checklist of all running apps, lets you 
 **Bind a hotkey at install time (GNOME):**
 
 ```bash
-./linux/install.sh --bind-hotkey            # binds Super+R (default)
-./linux/install.sh --bind-hotkey=Ctrl+Alt+R # any combo you want
+./linux/install.sh --bind-hotkey                  # binds Ctrl+Alt+R (default)
+./linux/install.sh --bind-hotkey=Super+Escape     # or any combo you want
 ```
 
 For `curl | bash` users, the flag works through the dispatcher too:
@@ -190,7 +190,9 @@ For `curl | bash` users, the flag works through the dispatcher too:
 curl -fsSL https://raw.githubusercontent.com/TGambit65/ram-rescue/main/install.sh | bash -s -- --bind-hotkey
 ```
 
-Accepted accelerator formats: `Super+R`, `Ctrl+Alt+R`, `Super+Escape`, or raw GTK form `<Super>r`. Other DEs (KDE / XFCE / MATE) print a warning and skip — bind manually via the DE's keyboard settings.
+Accepted accelerator formats: `Ctrl+Alt+R`, `Super+Escape`, `Pause`, or raw GTK form `<Control><Alt>r`. Other DEs (KDE / XFCE / MATE) print a warning and skip — bind manually via the DE's keyboard settings.
+
+> **Why not Super+R as the default?** GNOME's "overlay key" (Super alone) opens the Activities overview with the search field focused. Pressing Super+R fast often registers as Super → overview opens → R types into the search box, *before* the custom Super+R shortcut is recognized. Any Super+letter combo where the letter starts common app names is susceptible. Ctrl+Alt+R is a three-key chord GNOME never pre-processes, so it fires every time.
 
 **Bind manually (any DE):**
 

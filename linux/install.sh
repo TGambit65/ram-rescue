@@ -36,8 +36,10 @@ Usage: install.sh [options]
 Options:
   --bind-hotkey[=ACCEL]   After install, bind a GNOME keyboard shortcut to
                           launch the overlay (kill picker). ACCEL defaults to
-                          "Super+R". Other examples: "Ctrl+Alt+R",
-                          "Super+Escape", or raw GTK format like "<Super>r".
+                          "Ctrl+Alt+R". Other examples: "Super+Escape",
+                          "Pause", or raw GTK format like "<Control><Alt>r".
+                          AVOID Super+letter combos on GNOME — they collide
+                          with the overlay-key (Super alone opens Activities).
                           Currently GNOME-only — silently skipped elsewhere.
   -h, --help              This message
 EOF
@@ -48,7 +50,10 @@ parse_args() {
     case "$1" in
       --bind-hotkey)
         DO_BIND_HOTKEY=1
-        HOTKEY_ACCEL="Super+R"
+        # Default: Ctrl+Alt+R. Super+R is unreliable on GNOME because the
+        # overlay-key behavior on Super can open Activities first and the
+        # following 'R' gets typed into the search field.
+        HOTKEY_ACCEL="Ctrl+Alt+R"
         ;;
       --bind-hotkey=*)
         DO_BIND_HOTKEY=1
