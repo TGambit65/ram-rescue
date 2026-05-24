@@ -5,3 +5,6 @@
 
 # Local install artifacts
 *.local
+
+# Personal / outreach (not for the public repo)
+OUTREACH.md
