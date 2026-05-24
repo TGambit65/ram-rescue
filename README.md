@@ -2,6 +2,8 @@
 
 **A cross-platform low-RAM alerter, built for the era when you run Claude Code, Cursor, and 50 browser tabs at once.**
 
+🌐 **Website:** <https://tgambit65.github.io/ram-rescue/>
+
 Linux GNOME doesn't warn before RAM exhaustion freezes your machine. macOS and Windows do warn — but only at *critical* levels, far too late for an agentic workflow. ram-rescue fires a *configurable* early warning when available memory drops below your threshold (default: 15%), lists the top 5 memory consumers, and gives you one-click access to the system monitor so you can pick what to kill.
 
 **Zero daemon, zero idle cost.** On Linux, a systemd timer wakes a bash script every 60 seconds. On macOS, a launchd agent. On Windows, a Scheduled Task. Each script reads memory, decides whether to alert, and exits. No background process, no Electron, no GUI framework — those would defeat the point of a tool that manages your RAM.
