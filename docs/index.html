@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ram-rescue · early low-RAM alerts for Linux desktops</title>
+  <meta name="description" content="A small bash + systemd utility that warns you before Linux runs out of RAM. Built for the era of running multiple AI coding agents and 50 browser tabs simultaneously.">
+  <meta name="theme-color" content="#0f1115">
+  <meta property="og:title" content="ram-rescue · early low-RAM alerts for Linux desktops">
+  <meta property="og:description" content="A small bash + systemd utility that warns you before Linux runs out of RAM. Built for agentic coders.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://tgambit65.github.io/ram-rescue/">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3E%F0%9F%9F%A1%3C/text%3E%3C/svg%3E">
+  <style>
+    /* ---------- Tokens ---------- */
+    :root {
+      --bg: #0f1115;
+      --bg-elev: #161922;
+      --bg-elev-2: #1d212d;
+      --fg: #e6e8ee;
+      --fg-muted: #9aa1b1;
+      --fg-faint: #6b7185;
+      --accent: #fbbf24;
+      --accent-warm: #f59e0b;
+      --accent-bg: rgba(251,191,36,0.08);
+      --border: #262a36;
+      --border-strong: #353a4a;
+      --critical: #f87171;
+      --warn: #fbbf24;
+      --info: #60a5fa;
+      --ok: #34d399;
+      --mono: 'JetBrains Mono','SF Mono','Menlo','Consolas',ui-monospace,monospace;
+      --sans: 'Inter','SF Pro Text','Segoe UI','Helvetica Neue',sans-serif;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #fbfbfc;
+        --bg-elev: #fff;
+        --bg-elev-2: #f3f4f8;
+        --fg: #1a1c22;
+        --fg-muted: #4a5160;
+        --fg-faint: #6b7185;
+        --accent: #b45309;
+        --accent-warm: #92400e;
+        --accent-bg: rgba(180,83,9,0.08);
+        --border: #e5e7ec;
+        --border-strong: #c8cdd6;
+        --critical: #dc2626;
+        --warn: #d97706;
+        --info: #2563eb;
+        --ok: #059669;
+      }
+    }
+
+    /* ---------- Reset ---------- */
+    *,*::before,*::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--fg);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    a { color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color .15s; }
+    a:hover { border-bottom-color: var(--accent); }
+    code, pre, kbd { font-family: var(--mono); }
+    kbd {
+      display: inline-block;
+      padding: 1px 6px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      background: var(--bg-elev-2);
+      font-size: .85em;
+      line-height: 1.4;
+    }
+
+    /* ---------- Layout ---------- */
+    main { max-width: 760px; margin: 0 auto; padding: 0 24px 96px; }
+    section { padding: 56px 0; border-top: 1px solid var(--border); }
+    section:first-of-type { border-top: none; }
+
+    /* ---------- Hero ---------- */
+    .hero { padding: 96px 0 64px; text-align: center; }
+    .hero .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      margin-bottom: 24px;
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+      font-size: 12px;
+      font-family: var(--mono);
+      color: var(--fg-muted);
+      letter-spacing: .02em;
+    }
+    .hero h1 {
+      font-size: clamp(40px, 6vw, 64px);
+      margin: 0 0 16px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      font-family: var(--mono);
+    }
+    .hero h1 .emoji { display: inline-block; transform: translateY(-2px); }
+    .hero .tagline {
+      font-size: clamp(17px, 2vw, 20px);
+      color: var(--fg-muted);
+      margin: 0 auto 36px;
+      max-width: 560px;
+    }
+    .install-cmd {
+      display: block;
+      max-width: 100%;
+      overflow-x: auto;
+      padding: 16px 20px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border-strong);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      font-size: 13px;
+      text-align: left;
+      white-space: pre;
+      color: var(--fg);
+    }
+    .install-cmd .prompt { color: var(--fg-faint); user-select: none; }
+    .hero-links {
+      margin-top: 28px;
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .hero-links a {
+      padding: 8px 16px;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-size: 14px;
+      transition: background .15s;
+    }
+    .hero-links a:hover { background: var(--accent-bg); border-color: var(--accent); }
+
+    /* ---------- Typography ---------- */
+    h2 {
+      font-family: var(--mono);
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin: 0 0 24px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    h2 .hash {
+      color: var(--fg-faint);
+      font-weight: 400;
+      margin-right: 8px;
+      user-select: none;
+    }
+    h3 {
+      font-family: var(--mono);
+      font-size: 18px;
+      margin: 32px 0 12px;
+      color: var(--accent);
+    }
+    p { margin: 0 0 16px; }
+    p:last-child { margin-bottom: 0; }
+    strong { color: var(--fg); }
+    em { color: var(--accent-warm); font-style: normal; font-weight: 600; }
+    ul, ol { padding-left: 24px; margin: 0 0 16px; }
+    li { margin-bottom: 8px; }
+    li:last-child { margin-bottom: 0; }
+
+    /* ---------- Inline code ---------- */
+    p code, li code, td code {
+      padding: 2px 6px;
+      background: var(--bg-elev-2);
+      border-radius: 4px;
+      font-size: .9em;
+      color: var(--accent);
+      border: 1px solid var(--border);
+    }
+
+    /* ---------- Code blocks ---------- */
+    pre.block {
+      padding: 16px 20px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.55;
+      overflow-x: auto;
+      margin: 16px 0;
+    }
+    pre.block code { padding: 0; background: none; border: none; color: var(--fg); font-size: inherit; }
+    .comment { color: var(--fg-faint); }
+    .cmd { color: var(--accent); }
+
+    /* ---------- Tables ---------- */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      font-family: var(--mono);
+      font-weight: 600;
+      color: var(--fg-muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      border-bottom-color: var(--border-strong);
+    }
+
+    /* ---------- Notification mockup ---------- */
+    .notif {
+      max-width: 480px;
+      margin: 24px auto;
+      padding: 16px 20px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+      font-size: 14px;
+    }
+    .notif .ntitle {
+      font-family: var(--mono);
+      font-weight: 600;
+      color: var(--fg);
+      margin-bottom: 6px;
+    }
+    .notif .nbody { color: var(--fg-muted); margin-bottom: 12px; font-size: 13px; }
+    .notif .napps {
+      list-style: none;
+      padding: 0;
+      margin: 8px 0 12px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+    .notif .napps li { padding: 2px 0; color: var(--fg); }
+    .notif .nactions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+      margin-top: 8px;
+    }
+    .notif .nactions button {
+      padding: 6px 12px;
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--bg-elev-2);
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      color: var(--fg);
+      cursor: default;
+    }
+    .notif .nactions button.primary {
+      background: var(--accent-bg);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ---------- Severity grid ---------- */
+    .severity {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin: 20px 0;
+    }
+    .severity .level {
+      padding: 16px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      text-align: center;
+    }
+    .severity .level .emoji { font-size: 28px; display: block; margin-bottom: 8px; }
+    .severity .level .label {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--fg);
+      margin-bottom: 4px;
+    }
+    .severity .level .range { font-size: 12px; color: var(--fg-muted); }
+
+    /* ---------- Callout ---------- */
+    .callout {
+      margin: 20px 0;
+      padding: 16px 20px;
+      background: var(--accent-bg);
+      border: 1px solid var(--accent);
+      border-left-width: 3px;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    .callout strong { color: var(--accent); }
+
+    /* ---------- FAQ ---------- */
+    details {
+      border-top: 1px solid var(--border);
+      padding: 16px 0;
+    }
+    details:last-of-type { border-bottom: 1px solid var(--border); }
+    details summary {
+      cursor: pointer;
+      font-family: var(--mono);
+      font-weight: 600;
+      list-style: none;
+      color: var(--fg);
+      padding-right: 24px;
+      position: relative;
+    }
+    details summary::-webkit-details-marker { display: none; }
+    details summary::after {
+      content: '+';
+      position: absolute;
+      right: 0;
+      top: 0;
+      color: var(--accent);
+      font-family: var(--mono);
+      transition: transform .2s;
+    }
+    details[open] summary::after { content: '−'; }
+    details > p, details > pre { margin-top: 12px; margin-bottom: 0; color: var(--fg-muted); }
+    details > p:last-child { margin-bottom: 4px; }
+
+    /* ---------- Footer ---------- */
+    footer {
+      padding: 48px 0 0;
+      margin-top: 48px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      color: var(--fg-faint);
+      font-size: 13px;
+      font-family: var(--mono);
+    }
+    footer a { color: var(--fg-muted); }
+
+    /* ---------- Misc ---------- */
+    .text-muted { color: var(--fg-muted); }
+    .platform-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin: 20px 0;
+    }
+    .platform {
+      padding: 16px;
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .platform h4 {
+      font-family: var(--mono);
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: var(--fg);
+    }
+    .platform .status {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-family: var(--mono);
+      font-weight: 600;
+    }
+    .platform .status.tested { background: rgba(52,211,153,0.1); color: var(--ok); border: 1px solid var(--ok); }
+    .platform .status.untested { background: rgba(251,191,36,0.1); color: var(--warn); border: 1px solid var(--warn); }
+    .platform pre { font-size: 11px; margin: 8px 0 0; }
+
+    /* ---------- Section IDs ---------- */
+    section { scroll-margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <main>
+
+    <!-- ============================================================ -->
+    <!-- HERO                                                          -->
+    <!-- ============================================================ -->
+    <header class="hero">
+      <span class="badge">v0.5.2 · MIT · ~500 lines of bash</span>
+      <h1><span class="emoji">🟡</span> ram-rescue</h1>
+      <p class="tagline">Early low-RAM alerts for Linux desktops, built for the era of running multiple AI coding agents and 50 browser tabs simultaneously.</p>
+      <pre class="install-cmd"><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/TGambit65/ram-rescue/main/install.sh | bash</pre>
+      <div class="hero-links">
+        <a href="https://github.com/TGambit65/ram-rescue">GitHub →</a>
+        <a href="#install">Install</a>
+        <a href="#memory-model">How memory works</a>
+        <a href="#optimize">Optimize</a>
+      </div>
+    </header>
+
+    <!-- ============================================================ -->
+    <!-- THE PROBLEM                                                   -->
+    <!-- ============================================================ -->
+    <section id="why">
+      <h2><span class="hash">#</span>why</h2>
+      <p>macOS pops <em>"Your system has run out of application memory"</em> before things get critical. Windows pops <em>"Your computer is low on memory."</em> Linux GNOME doesn't — it just starts swapping until your machine becomes unresponsive.</p>
+      <p>If you run multiple AI coding agents (Claude Code, Cursor, Aider) plus a browser with 50 tabs and a few language servers, you'll hit the freeze regularly. The kernel's OOM killer eventually fires, but by then your session is already trashed.</p>
+      <p><strong>ram-rescue is the missing early warning layer:</strong> a systemd-user timer that wakes every 60 seconds, reads <code>/proc/meminfo</code> and <code>/proc/pressure/memory</code>, and fires a desktop notification when memory gets tight — while you can still close things gracefully.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- WHAT IT DOES                                                  -->
+    <!-- ============================================================ -->
+    <section id="what">
+      <h2><span class="hash">#</span>what it does</h2>
+
+      <p>A small shell-script-and-systemd-timer that does four things, in order of usefulness:</p>
+
+      <h3>1 · Periodic memory check</h3>
+      <p>Wakes every 60 seconds. Reads <code>/proc/meminfo</code> for the percentage of available memory, plus <code>/proc/pressure/memory</code> for the kernel's PSI signal (more on that below). Fires a desktop notification when either trigger goes off. <strong>Exits in ~50ms.</strong> Zero resident process; no daemon to feed.</p>
+
+      <div class="notif">
+        <div class="ntitle">🟡 Low memory · 12% available</div>
+        <div class="nbody">3,900 MB free of 32,009 MB · Top apps:</div>
+        <ul class="napps">
+          <li>🌐 Chrome · 6.6 GB · ~17 tabs</li>
+          <li>🐍 Python · 1.5 GB · Python interpreter</li>
+          <li>🤖 Claude Code · 1.1 GB · Anthropic AI agent</li>
+          <li>🖥️ GNOME · 1006 MB · Desktop env (keep alive)</li>
+          <li>📡 uvicorn · 908 MB · Python ASGI web server</li>
+        </ul>
+        <div class="nactions">
+          <button class="primary">Open Monitor</button>
+          <button>Snooze 30m</button>
+        </div>
+      </div>
+
+      <p class="text-muted" style="text-align:center; font-size:13px; margin-top:4px;">↑ what the alert actually looks like</p>
+
+      <h3>2 · App-grouped, summarized top list</h3>
+      <p>Chrome's 50+ subprocesses collapse to one <code>🌐 Chrome</code> row with an approximate tab count. VS Code Helper variants roll up to <code>📝 VS Code</code>. ~40 common apps recognized with emoji + one-line summary so you know what each thing <em>is</em> before deciding to kill it. Severity emoji in the title (<span style="color:var(--warn)">🟡</span> / <span style="color:var(--accent-warm)">🟠</span> / <span style="color:var(--critical)">🔴</span>) tells you at a glance how bad it is.</p>
+
+      <div class="severity">
+        <div class="level">
+          <span class="emoji">🟡</span>
+          <div class="label">Warning</div>
+          <div class="range">15–25% available</div>
+        </div>
+        <div class="level">
+          <span class="emoji">🟠</span>
+          <div class="label">Alarming</div>
+          <div class="range">5–15% available</div>
+        </div>
+        <div class="level">
+          <span class="emoji">🔴</span>
+          <div class="label">Critical</div>
+          <div class="range">&lt; 5% available</div>
+        </div>
+      </div>
+
+      <h3>3 · Hotkey-launched kill picker</h3>
+      <p>Bind any key (defaults to <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd>). Pressing it opens a checklist of all running apps; tick what to close, confirm, and SIGTERM goes out. Same app classifier as the alert, so the picker shows the same friendly names. System processes (GNOME shell, X server, systemd, shells) are filtered out so you don't accidentally end your session.</p>
+
+      <h3>4 · OOM-killer post-mortem</h3>
+      <p>If the kernel killed something while you were AFK, you find out via a separate <code>💀 Linux OOM-killer fired · victim: &lt;name&gt;</code> notification on the next timer fire. Scans <code>journalctl -k</code> for kernel OOM events since the last check.</p>
+
+      <h3>+ Analytical commands</h3>
+      <p><code>ram-rescue why</code> shows per-app analysis with "closing X frees Y" math. <code>ram-rescue stats</code> gives a 7-day history of alerts, most-frequent offenders, and outcomes. Useful for <em>"should I buy more RAM or just close tabs?"</em></p>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- MEMORY MODEL                                                  -->
+    <!-- ============================================================ -->
+    <section id="memory-model">
+      <h2><span class="hash">#</span>how Linux memory actually works</h2>
+
+      <p>If you've ever looked at <code>free -h</code> and wondered <em>"I have 16 GB of cache and 5 GB free — why is my swap at 8 GB?"</em> — this section is for you.</p>
+
+      <h3>The terms</h3>
+      <table>
+        <thead><tr><th style="width:18%">Term</th><th>What it is</th><th style="width:28%">What you can do</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Free</strong></td><td>Truly unused RAM. Modern Linux deliberately keeps this <em>low</em> because idle RAM is wasted RAM — anything not in use is fair game for cache.</td><td>Nothing — by design.</td></tr>
+          <tr><td><strong>Buff/cache</strong></td><td>File contents the kernel opportunistically cached. Counted as "in use" in some tools, but is <strong>instantly reclaimable</strong> — when an app asks for memory, the kernel drops cache pages and hands the RAM over.</td><td>Treat as available.</td></tr>
+          <tr><td><strong>Used</strong></td><td>Anonymous pages — memory allocated by applications for their own working set (not file-backed).</td><td>Close apps to reduce.</td></tr>
+          <tr><td><strong>Swap</strong></td><td>Pages the kernel pushed to disk to free RAM at some point in the past. The kernel chooses idle anonymous pages over hot cache pages when memory pressure rises.</td><td>Adjust swappiness, manually reclaim (see below).</td></tr>
+          <tr><td><strong>Available</strong></td><td>Kernel's estimate of how much can be allocated to a new app without swapping. Roughly <code>free + reclaimable cache</code>. <em>This is what ram-rescue watches.</em></td><td>Nothing directly — it's a computed value.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Why is swap stuck high when I have free RAM?</h3>
+      <p><strong>Swap is sticky.</strong> Once a page lands in swap, it stays there until something tries to read it back. It doesn't auto-shrink when RAM frees up.</p>
+      <p>So that 8 GB of swap is probably <em>history</em>, not current pressure. You had a memory crunch earlier (Chrome opened 30 tabs, a Python script went runaway, an AI agent allocated a big context), the kernel pushed idle anonymous pages out to swap to free up RAM, those apps haven't touched those pages since → they're still parked there. Meanwhile cache filled the freed RAM because files keep getting accessed.</p>
+
+      <h3>PSI: the metric the percentage misses</h3>
+      <p>You can be at 30% MemAvailable and in a swap-thrashing loop where every memory access costs a disk read. The percentage looks fine; the machine feels like molasses.</p>
+      <p><strong>PSI</strong> (Pressure Stall Information, <code>/proc/pressure/memory</code>, kernel ≥ 4.20) is a <em>velocity</em> metric. It tells you what percentage of wall time at least one task was stalled waiting on memory in the last 10 seconds. When PSI is high, you're suffering — even if MemAvailable looks OK.</p>
+      <p>ram-rescue checks both. The notification title reads <em>"Memory pressure"</em> instead of <em>"Low memory"</em> when PSI fired, so you know what triggered it.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- OPTIMIZE                                                      -->
+    <!-- ============================================================ -->
+    <section id="optimize">
+      <h2><span class="hash">#</span>optimizing memory usage</h2>
+
+      <h3>Lower swappiness</h3>
+      <p>The <code>vm.swappiness</code> kernel parameter (0–100, default 60 on most distros) controls how aggressively the kernel swaps out idle anonymous pages versus dropping cache. At the default, the kernel happily pushes idle apps to disk even when cache could be dropped instead — which is great for server throughput, less great for desktop responsiveness.</p>
+      <p>For an interactive desktop running AI workloads, drop it to 10:</p>
+      <pre class="block"><code><span class="comment"># One-time (lasts until reboot):</span>
+<span class="cmd">sudo</span> sysctl vm.swappiness=10
+
+<span class="comment"># Persistent across reboots:</span>
+<span class="cmd">echo</span> 'vm.swappiness=10' | <span class="cmd">sudo</span> tee /etc/sysctl.d/99-swappiness.conf
+<span class="cmd">sudo</span> sysctl -p /etc/sysctl.d/99-swappiness.conf</code></pre>
+
+      <h3>Reclaim existing swap</h3>
+      <p>If you already have several GB sitting in swap from earlier pressure, force it back into RAM:</p>
+      <pre class="block"><code><span class="cmd">sudo</span> swapoff -a &amp;&amp; <span class="cmd">sudo</span> swapon -a</code></pre>
+      <p class="text-muted">Takes 10–30 seconds. Only run when you have enough free RAM to hold the returning pages — check <code>free -h</code> first and make sure <em>available</em> ≥ <em>swap used</em>.</p>
+
+      <h3>Check whether swap is the real problem</h3>
+      <p>Swap usage by itself isn't bad — only <em>active</em> swap I/O is. <code>vmstat</code> shows you whether the system is actively reading from or writing to swap:</p>
+      <pre class="block"><code><span class="cmd">vmstat</span> 1 5</code></pre>
+      <p>The <code>si</code> (swap-in) and <code>so</code> (swap-out) columns are what matter. Sustained nonzero values = thrashing. Zeros = swap is just parked; ignore it.</p>
+
+      <h3>Watch memory pressure in real time</h3>
+      <p>PSI gives you a live signal of how stressed the memory subsystem actually is:</p>
+      <pre class="block"><code><span class="cmd">watch</span> -n 1 cat /proc/pressure/memory</code></pre>
+      <p>The <code>some avg10</code> column is the most useful — percentage of the last 10s where any task stalled on memory. Above 10% means real pain.</p>
+
+      <h3>Limit Chrome's memory hunger</h3>
+      <p>Chrome is almost always the biggest offender. A few useful flags (set via <code>chrome://flags</code> or command-line):</p>
+      <ul>
+        <li><strong>Memory Saver</strong> (built-in, Chrome 108+): puts inactive tabs to sleep. <code>chrome://settings/performance</code> → enable Memory Saver.</li>
+        <li><strong>Tab discarding</strong>: visit <code>chrome://discards</code> to see and manually discard tabs.</li>
+        <li><strong>Extensions audit</strong>: <code>chrome://extensions</code> — disable what you don't actively use. Each extension is a process.</li>
+      </ul>
+
+      <h3>The honest take</h3>
+      <div class="callout">
+        <p><strong>If you're hitting the RAM wall daily, the real answer is more RAM.</strong></p>
+        <p>ram-rescue is the warning layer; tuning swappiness and Memory Saver are damage control. If you're running 3 AI coding agents and 50 tabs on 16 GB, the system is over-committed. Going from 16 to 32 GB removes the problem; tuning makes the crashes happen less often.</p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- INSTALL                                                       -->
+    <!-- ============================================================ -->
+    <section id="install">
+      <h2><span class="hash">#</span>install</h2>
+
+      <div class="platform-grid">
+        <div class="platform">
+          <h4>Linux</h4>
+          <span class="status tested">tested by author</span>
+          <pre class="block"><code>curl -fsSL https://raw.githubusercontent.com/TGambit65/ram-rescue/main/install.sh | bash</code></pre>
+          <p class="text-muted" style="font-size:13px;">GNOME / KDE / XFCE / MATE / Cinnamon detected automatically.</p>
+        </div>
+        <div class="platform">
+          <h4>macOS</h4>
+          <span class="status untested">untested</span>
+          <pre class="block"><code>curl -fsSL https://raw.githubusercontent.com/TGambit65/ram-rescue/main/install.sh | bash</code></pre>
+          <p class="text-muted" style="font-size:13px;">launchd + osascript. Same one-liner; the dispatcher detects Darwin.</p>
+        </div>
+        <div class="platform">
+          <h4>Windows</h4>
+          <span class="status untested">untested</span>
+          <pre class="block"><code>iwr -useb https://raw.githubusercontent.com/TGambit65/ram-rescue/main/windows/install.ps1 | iex</code></pre>
+          <p class="text-muted" style="font-size:13px;">PowerShell + Scheduled Task + toast notifications.</p>
+        </div>
+      </div>
+
+      <h3>Bind the kill-picker hotkey (Linux)</h3>
+      <pre class="block"><code><span class="comment"># Default: Ctrl+Alt+R</span>
+curl -fsSL .../install.sh | bash -s -- --bind-hotkey
+
+<span class="comment"># Custom key:</span>
+curl -fsSL .../install.sh | bash -s -- --bind-hotkey=Super+Escape</code></pre>
+      <p class="text-muted">Auto-detects GNOME and wires it via <code>gsettings</code>. KDE / XFCE / MATE: bind manually via the DE's keyboard settings.</p>
+
+      <h3>Quick verification</h3>
+      <pre class="block"><code><span class="cmd">ram-rescue</span> status     <span class="comment"># current RAM + timer state</span>
+<span class="cmd">ram-rescue</span> apps       <span class="comment"># grouped top apps</span>
+<span class="cmd">ram-rescue</span> why        <span class="comment"># "closing X frees Y" analysis</span>
+<span class="cmd">ram-rescue</span> stats      <span class="comment"># 7-day alert history</span>
+<span class="cmd">ram-rescue</span> test       <span class="comment"># fire a test alert</span></code></pre>
+
+      <h3>Uninstall</h3>
+      <pre class="block"><code><span class="cmd">ram-rescue</span> uninstall</code></pre>
+      <p>Removes the timer, service, scripts, CLI link, and hotkey binding. Config and state files preserved — delete manually if you want a full wipe.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- FAQ                                                           -->
+    <!-- ============================================================ -->
+    <section id="faq">
+      <h2><span class="hash">#</span>faq</h2>
+
+      <details>
+        <summary>Why bash and not Rust/Go?</summary>
+        <p>The script already shells out to <code>notify-send</code>, <code>gnome-system-monitor</code>, <code>ps</code>, and reads <code>/proc/meminfo</code>. A Go binary buys you nothing but a build pipeline and arch-specific tarballs. Bash + systemd is the idiomatic Linux answer here; the whole thing is ~500 lines and runs in 50ms per timer fire.</p>
+      </details>
+
+      <details>
+        <summary>Why not a resident daemon?</summary>
+        <p>The point is to manage RAM, not consume it. A resident daemon — even a minimal one — is ~20–40 MB always. The timer-based design is 0 MB between invocations. Each run takes 50ms and exits.</p>
+      </details>
+
+      <details>
+        <summary>Why not auto-kill like <code>earlyoom</code>?</summary>
+        <p>Different layer of defense. <code>earlyoom</code> and <code>nohang</code> are great for auto-killing under extreme pressure. ram-rescue is the <em>early warning</em> that fires <em>before</em> you'd want auto-kill to activate, so you can pick what to close yourself. Run both: <code>earlyoom</code> as the safety net, ram-rescue as the heads-up.</p>
+      </details>
+
+      <details>
+        <summary>Does it work on Wayland?</summary>
+        <p>The notification path (D-Bus → <code>notify-send</code>) works identically on X11 and Wayland. The hotkey binding uses <code>gsettings</code> on GNOME (works on both). KDE on Wayland needs manual binding via System Settings.</p>
+      </details>
+
+      <details>
+        <summary>Why is the kill picker dialog ~200 MB?</summary>
+        <p>It uses <code>zenity</code>, which on Ubuntu 24 pulls in all of GTK4 — about 100 shared libraries. That's the same tier as <code>gnome-system-monitor</code> itself (~215 MB). It's only visible during your interaction — 0 MB between invocations. A Python+Tkinter rewrite (~20 MB visible) is tracked for a future release.</p>
+      </details>
+
+      <details>
+        <summary>Does swap-to-SSD wear out my disk?</summary>
+        <p>Modern SSDs are rated for hundreds of TB of writes; a typical desktop with 8 GB of swap activity won't put a meaningful dent in that even over years. Don't disable swap to "protect" the SSD — having no swap just makes the OOM killer fire sooner. Tune swappiness instead.</p>
+      </details>
+
+      <details>
+        <summary>Should I just buy more RAM?</summary>
+        <p>Probably yes. ram-rescue is the warning layer; tuning is damage control. If you're hitting the RAM wall daily on 16 GB while running multiple AI agents, going to 32 GB is the actual fix. The tool helps make a 16 GB machine less painful, but doesn't make 16 GB <em>enough</em>.</p>
+      </details>
+
+      <details>
+        <summary>Will this work on a server / headless box?</summary>
+        <p>No. It needs a desktop session (notify-send + a notification daemon). For servers, use <code>nohang</code> or <code>earlyoom</code> with their email/syslog alert features instead.</p>
+      </details>
+
+      <details>
+        <summary>The notification doesn't appear when I run <code>ram-rescue test</code>.</summary>
+        <p>First check <code>notify-send "hello"</code> works at all — if not, your notification daemon isn't running. On GNOME that's <code>gnome-shell</code>; on KDE it's <code>plasmashell</code>; on minimal WMs install <code>dunst</code>. Also check Focus Assist / Do Not Disturb isn't muting it.</p>
+      </details>
+
+      <details>
+        <summary>Where are the logs?</summary>
+        <pre class="block"><code>ram-rescue logs           <span class="comment"># last 20 entries</span>
+journalctl --user -t ram-rescue --since today</code></pre>
+        <p>Every alert and OOM event is logged with <code>logger -t ram-rescue</code>, queryable via journald.</p>
+      </details>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- LINKS                                                         -->
+    <!-- ============================================================ -->
+    <section id="links">
+      <h2><span class="hash">#</span>links</h2>
+      <ul>
+        <li><a href="https://github.com/TGambit65/ram-rescue">Source on GitHub</a></li>
+        <li><a href="https://github.com/TGambit65/ram-rescue/releases">Releases / changelog</a></li>
+        <li><a href="https://github.com/TGambit65/ram-rescue/issues">Issues &amp; feature requests</a></li>
+        <li><a href="https://github.com/TGambit65/ram-rescue/blob/main/LICENSE">MIT License</a></li>
+      </ul>
+
+      <h3>Related tools worth knowing</h3>
+      <ul>
+        <li><a href="https://github.com/rfjakob/earlyoom">earlyoom</a> — userspace OOM killer that fires before the kernel does. Complements ram-rescue.</li>
+        <li><a href="https://github.com/hakavlad/nohang">nohang</a> — same idea, more configurable.</li>
+        <li><a href="https://htop.dev/">htop</a> / <a href="https://github.com/aristocratos/btop">btop</a> — interactive process viewers, for after the alert.</li>
+        <li><a href="https://flathub.org/apps/io.missioncenter.MissionCenter">Mission Center</a> — modern GUI system monitor.</li>
+      </ul>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- FOOTER                                                        -->
+    <!-- ============================================================ -->
+    <footer>
+      <p>ram-rescue v0.5.2 · MIT licensed · <a href="https://github.com/TGambit65/ram-rescue">github.com/TGambit65/ram-rescue</a></p>
+      <p style="margin-top:8px; font-size:11px;">No tracking. No analytics. No third-party requests. ~10 KB gzipped.</p>
+    </footer>
+
+  </main>
+</body>
+</html>
