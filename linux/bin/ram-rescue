@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.5.0"
+VERSION="0.5.1"
 
 # Locate and source the classifier library.
 _RR_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -351,9 +351,11 @@ stats_view() {
   fi
   echo ""
 
-  # OOM-killer events surfaced.
+  # OOM-killer events surfaced. `grep -c` already prints the count (even "0")
+  # on stdout; it just exits 1 on zero matches. `|| true` swallows that exit
+  # so set -e doesn't kill the substitution.
   local oom_count
-  oom_count=$(printf '%s\n' "$lines" | grep -c 'oom-postmortem')
+  oom_count=$(printf '%s\n' "$lines" | grep -c 'oom-postmortem' || true)
   printf 'Kernel OOM events surfaced: %d\n' "$oom_count"
 
   set -o pipefail

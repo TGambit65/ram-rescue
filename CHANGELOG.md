@@ -4,6 +4,11 @@ All notable changes to ram-rescue will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.1] — 2026-05-23
+
+### Fixed
+- `ram-rescue stats` exited with code 1 and silently dropped the "Kernel OOM events surfaced" line when zero OOM events were found. `grep -c` returns exit 1 on zero matches; under `set -e` that kills the command substitution even though `set +o pipefail` is in effect. Added `|| true` to swallow the non-zero exit (grep -c already prints "0" on stdout, so no fallback value needed).
+
 ## [0.5.0] — 2026-05-23
 
 Four new triggers / commands designed to catch the cases the v0.4.x flow misses or to explain what's going on.

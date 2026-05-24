@@ -1,6 +1,6 @@
 # ram-rescue-ctl.ps1 - user-facing CLI (Windows)
 
-$Version = '0.5.0'
+$Version = '0.5.1'
 $Prefix = Join-Path $env:LOCALAPPDATA 'ram-rescue'
 $ConfigDir = $Prefix
 $ConfigFile = Join-Path $ConfigDir 'config.ps1'
