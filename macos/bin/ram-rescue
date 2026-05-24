@@ -9,7 +9,13 @@ VERSION="0.5.2"
 # ---------------------------------------------------------------- config
 THRESHOLD_PCT=15
 COOLDOWN_SEC=600
+# SNOOZE_DURATION and MONITOR_CMD are part of the cross-platform config schema
+# (Linux uses them) — declared here so user configs that set them don't fail.
+# macOS Notification Center has no action buttons (no snooze) and always opens
+# Activity Monitor (no MONITOR_CMD override needed).
+# shellcheck disable=SC2034
 SNOOZE_DURATION=1800
+# shellcheck disable=SC2034
 MONITOR_CMD=""
 
 # shellcheck disable=SC1091
@@ -140,22 +146,22 @@ count_chrome_tabs() {
 
 # ---------------------------------------------------------------- top apps
 top_apps() {
-  local -A app_rss app_count app_emoji app_desc app_cat
-  local rss comm info name emoji desc cat cur
+  local -A app_rss app_count app_emoji app_desc
+  local rss comm info name emoji desc cur
 
+  # macOS top_apps doesn't use category — discard the 4th field with `_`.
   set +u
   while read -r rss comm; do
     [[ -z "$comm" ]] && continue
     ((rss == 0)) && continue
     info=$(classify_app "$comm")
-    IFS=$'\t' read -r name emoji desc cat <<<"$info"
+    IFS=$'\t' read -r name emoji desc _ <<<"$info"
     cur=${app_rss[$name]:-0}
     app_rss[$name]=$((cur + rss))
     cur=${app_count[$name]:-0}
     app_count[$name]=$((cur + 1))
     app_emoji[$name]="$emoji"
     app_desc[$name]="$desc"
-    app_cat[$name]="$cat"
   done < <(ps -axo rss,comm | tail -n +2)
   set -u
 

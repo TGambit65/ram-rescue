@@ -27,6 +27,8 @@ SNOOZE_DURATION=1800
 MONITOR_CMD=""
 # PSI (memory pressure) trigger — kernel >= 4.20 only. Alert when `some avg10`
 # from /proc/pressure/memory exceeds this percentage. 0 to disable.
+# (Read by psi_under_pressure() in the sourced lib — shellcheck can't see that.)
+# shellcheck disable=SC2034
 PSI_AVG10_THRESHOLD=10.0
 # Surface kernel OOM-killer events as a post-mortem notification.
 OOM_WATCH=1
@@ -99,6 +101,8 @@ set_quiet_window() {
 
 # ---------------------------------------------------------------- top apps (top 5 for notification)
 top_apps() {
+  # APP_* arrays are populated by build_app_table() in the sourced lib; shellcheck can't see that.
+  # shellcheck disable=SC2034
   declare -A APP_RSS APP_COUNT APP_EMOJI APP_DESC APP_CAT
   local APP_SORTED=""
   build_app_table
@@ -247,6 +251,8 @@ main() {
 # ---------------------------------------------------------------- analytical views
 why_view() {
   read_memory
+  # APP_* arrays are populated by build_app_table() in the sourced lib; shellcheck can't see that.
+  # shellcheck disable=SC2034
   declare -A APP_RSS APP_COUNT APP_EMOJI APP_DESC APP_CAT
   local APP_SORTED=""
   build_app_table
@@ -271,12 +277,11 @@ why_view() {
 
   printf 'Top apps by total memory · what you would free by closing each:\n\n'
 
-  local count=0 chrome_tabs=-1 rss name mb pct_of_total new_avail_pct count_str tab_str
+  local count=0 chrome_tabs=-1 rss name pct_of_total new_avail_pct count_str tab_str
   while IFS=$'\t' read -r rss name; do
     ((count >= 8)) && break
     [[ -z "$name" ]] && continue
 
-    mb=$((rss / 1024))
     pct_of_total=$((rss * 100 / MEM_TOTAL_KB))
     new_avail_pct=$(((MEM_AVAIL_KB + rss) * 100 / MEM_TOTAL_KB))
 

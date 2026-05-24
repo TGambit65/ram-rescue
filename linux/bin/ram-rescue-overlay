@@ -12,7 +12,8 @@
 
 set -euo pipefail
 
-VERSION="0.5.2"
+# Version comes from the main `ram-rescue` script; the overlay is invoked via
+# `ram-rescue overlay` and doesn't expose its own --version.
 
 # Locate the classifier library (mirror logic from ram-rescue).
 _RR_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,6 +34,8 @@ if ! command -v zenity >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------- snapshot
+# APP_* arrays are populated by build_app_table() in the sourced lib; shellcheck can't see that.
+# shellcheck disable=SC2034
 declare -A APP_RSS APP_COUNT APP_EMOJI APP_DESC APP_CAT
 APP_SORTED=""
 build_app_table
@@ -136,7 +139,6 @@ fi
 # ---------------------------------------------------------------- kill
 killed=0
 failed=0
-warnings=()
 while IFS=' ' read -r pid comm; do
   [[ -z "$comm" ]] && continue
   info=$(classify_app "$comm")
