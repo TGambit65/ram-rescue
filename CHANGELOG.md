@@ -4,6 +4,27 @@ All notable changes to ram-rescue will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] — 2026-05-23
+
+Four new triggers / commands designed to catch the cases the v0.4.x flow misses or to explain what's going on.
+
+### Added — triggers
+- **PSI-based trigger** (kernel ≥ 4.20). Reads `some avg10` from `/proc/pressure/memory`. If memory pressure exceeds `PSI_AVG10_THRESHOLD` (default `10.0`%), fires an alert *regardless of MemAvailable %*. This catches swap-thrashing situations where you technically have "free" RAM but the kernel is stalled. Set the threshold to `0` to disable. Title reads "Memory pressure" instead of "Low memory" so you can tell the triggers apart.
+- **OOM-killer post-mortem**. Each timer fire now scans `journalctl -k` for kernel OOM events since the last check. If the kernel killed something while you were AFK, a separate `💀 Linux OOM-killer fired · victim: <name>` notification surfaces it. State tracked in `~/.local/state/ram-rescue/last-oom-check` so we don't double-notify. Toggle with `OOM_WATCH=0` in config.
+
+### Added — analytical commands
+- **`ram-rescue why`**: per-app analysis with "closing X frees Y" math, % of total RAM, process count, browser tab proxy. Includes a PSI summary line so you can tell at a glance whether the kernel agrees you're under pressure.
+- **`ram-rescue stats [DAYS]`** (default 7): historical view from journald — alerts per day, most-frequently-flagged apps, alert outcomes (open/snooze/none), and OOM events surfaced.
+
+### Changed
+- Alert log line now includes `trigger=mem|psi` and `top=Chrome,Python,...` (top 3 app names). Old log lines from v0.4.x lack the `top=` field; `stats` shows a hint when no data is available yet.
+- Notification title now reflects trigger: `🟡 Low memory · 12% available` vs `🟡 Memory pressure · 30% available (kernel stalling)`.
+- Config gains two knobs: `PSI_AVG10_THRESHOLD` and `OOM_WATCH`.
+
+### Implementation notes
+- New helpers in `linux/lib/classify.sh`: `read_psi_avg10`, `psi_under_pressure`, `recent_oom_kills`, `oom_extract_victim`. Shared by all Linux entry points.
+- macOS and Windows variants are *not* feature-parity in this release: PSI is Linux-only, and OOM detection uses Linux-specific `journalctl -k`. The macOS equivalent (`log show`) and Windows Event Log integration are tracked for v0.5.1+.
+
 ## [0.4.2] — 2026-05-23
 
 Hotkey default changed from `Super+R` to `Ctrl+Alt+R`.

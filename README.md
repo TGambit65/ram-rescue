@@ -160,6 +160,8 @@ Override with `MONITOR_CMD="..."` in your config.
 ```
 ram-rescue status              Show current memory state and agent status
 ram-rescue apps                Show top apps grouped by name (no notification)
+ram-rescue why                 Per-app analysis: "closing X frees Y" + PSI summary (v0.5.0+)
+ram-rescue stats [DAYS]        Alert history from journald (default 7 days) (v0.5.0+)
 ram-rescue overlay             Open the on-demand kill picker (Linux v0.4.0+)
 ram-rescue test                Force a low-memory alert
 ram-rescue open                Launch the system monitor / Activity Monitor / Task Manager
@@ -172,6 +174,61 @@ ram-rescue help                This message
 ```
 
 `ram-rescue apps` prints the same grouped view that the notification shows, but to your terminal — great for ad-hoc inspection or scripting.
+
+## Triggers (Linux, v0.5.0+)
+
+ram-rescue fires alerts from three independent signals:
+
+1. **MemAvailable threshold** (all platforms). When `MemAvailable/MemTotal` drops below `THRESHOLD_PCT` (default 15%). The original trigger from v0.1.0.
+2. **PSI memory pressure** (Linux, kernel ≥ 4.20). Reads `/proc/pressure/memory`. When `some avg10` — the percentage of wall time at least one task stalled on memory in the last 10 seconds — exceeds `PSI_AVG10_THRESHOLD` (default `10.0`), fires an alert *regardless of MemAvailable*. Catches swap-thrashing situations where you have "free" RAM but the kernel is grinding. Set to `0` to disable. The notification title reads "Memory pressure" so you can tell the triggers apart.
+3. **OOM-killer post-mortem** (Linux). On each timer fire, scans `journalctl -k` for kernel OOM events since the last check. If something got killed while you were AFK, a separate `💀 Linux OOM-killer fired · victim: <name>` notification tells you what died. Toggle with `OOM_WATCH=0`.
+
+### Why "PSI" matters
+
+The MemAvailable percentage is a snapshot. PSI is a *velocity* metric — it tells you the kernel is actually struggling. You can be at 30% MemAvailable but in a swap-thrashing loop where every memory access costs a disk read; PSI catches that, MemAvailable doesn't.
+
+## `ram-rescue why` — what's eating my RAM?
+
+A quick "explain the situation" output:
+
+```
+🟡 Memory: 57% available · 18272 MB free of 32009 MB
+Kernel pressure (some avg10): 0.00% · negligible
+
+Top apps by total memory · what you would free by closing each:
+
+  🌐 Chrome · 8.6 GB · 27% of total RAM · 39 processes · ~24 tabs
+     → closing frees 8.6 GB · would push you to 84% available
+     Web browser
+
+  ⚙️ Node.js · 2.9 GB · 9% of total RAM · 17 processes
+     → closing frees 2.9 GB · would push you to 66% available
+     JavaScript runtime
+   ...
+```
+
+## `ram-rescue stats` — am I getting better or worse?
+
+```
+ram-rescue stats · last 7 days
+
+Alerts per day:
+  May 23: 4
+  May 22: 1
+
+Most-frequently-flagged apps:
+  Chrome                    × 3
+  Python                    × 2
+  Node.js                   × 1
+
+Alert outcomes:
+  none            × 3
+  open            × 2
+
+Kernel OOM events surfaced: 0
+```
+
+Useful for "should I buy more RAM or just close tabs?"
 
 ## Hotkey-launched kill picker (Linux, v0.4.0+)
 

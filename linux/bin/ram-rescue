@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="0.4.2"
+VERSION="0.5.0"
 
 # Locate and source the classifier library.
 _RR_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,6 +25,11 @@ THRESHOLD_PCT=15
 COOLDOWN_SEC=600
 SNOOZE_DURATION=1800
 MONITOR_CMD=""
+# PSI (memory pressure) trigger — kernel >= 4.20 only. Alert when `some avg10`
+# from /proc/pressure/memory exceeds this percentage. 0 to disable.
+PSI_AVG10_THRESHOLD=10.0
+# Surface kernel OOM-killer events as a post-mortem notification.
+OOM_WATCH=1
 
 # shellcheck disable=SC1091
 [[ -r /etc/ram-rescue/config ]] && source /etc/ram-rescue/config
@@ -120,10 +125,16 @@ top_apps() {
 
 # ---------------------------------------------------------------- alert
 fire_alert() {
-  local apps severity body title action
+  local apps severity body title action top_names trigger="${1:-mem}"
   severity=$(severity_emoji "$MEM_PCT")
   apps=$(top_apps)
-  title="${severity} Low memory · ${MEM_PCT}% available"
+
+  if [[ "$trigger" == "psi" ]]; then
+    title="${severity} Memory pressure · ${MEM_PCT}% available (kernel stalling)"
+  else
+    title="${severity} Low memory · ${MEM_PCT}% available"
+  fi
+
   body=$(printf '%d MB free of %d MB · Top apps:\n\n%s' \
     "$((MEM_AVAIL_KB / 1024))" "$((MEM_TOTAL_KB / 1024))" "$apps")
 
@@ -163,19 +174,189 @@ fire_alert() {
       ;;
   esac
 
-  logger -t ram-rescue "alert pct=${MEM_PCT} avail=${MEM_AVAIL_KB}kB action=${action:-none}"
+  # Extract top 3 app names (drop emoji + middle-dot fields) for stats parsing later.
+  top_names=$(printf '%s\n' "$apps" | head -3 |
+    awk -F'·' '{sub(/^ *[^ ]+ /, "", $1); gsub(/[ \t]+$/, "", $1); printf "%s ", $1}' |
+    tr -s ' ' | sed 's/ /,/g; s/,$//')
+
+  logger -t ram-rescue "alert trigger=$trigger pct=${MEM_PCT} avail=${MEM_AVAIL_KB}kB action=${action:-none} top=${top_names}"
+}
+
+# ---------------------------------------------------------------- OOM post-mortem
+fire_oom_postmortem() {
+  local events="$1"
+  local victim severity title body
+  victim=$(printf '%s\n' "$events" | oom_extract_victim)
+  victim=${victim:-unknown}
+
+  severity=$(severity_emoji "$MEM_PCT")
+  title="💀 Linux OOM-killer fired · victim: $victim"
+  body=$(printf 'The kernel killed processes to free memory.\nLast victim: %s\nMemory now: %s %d%% available.\n\nConsider closing tabs or agents to prevent recurrence.\nRun `ram-rescue logs` or `journalctl -k --since "1h ago"` for the full trace.' \
+    "$victim" "$severity" "$MEM_PCT")
+
+  notify-send \
+    --app-name=ram-rescue \
+    --urgency=critical \
+    --icon=dialog-error \
+    --expire-time=60000 \
+    "$title" "$body" 2>/dev/null || true
+
+  logger -t ram-rescue "oom-postmortem victim=$victim avail=${MEM_AVAIL_KB}kB"
 }
 
 # ---------------------------------------------------------------- main
 main() {
+  # OOM post-mortem runs first — independent of memory state and quiet window.
+  # If the kernel killed something while we were AFK, we want to know now.
+  if ((${OOM_WATCH:-1} == 1)); then
+    local oom_events
+    oom_events=$(recent_oom_kills)
+    if [[ -n "$oom_events" ]]; then
+      read_memory
+      fire_oom_postmortem "$oom_events"
+    fi
+  fi
+
   read_memory
-  if ((MEM_PCT >= THRESHOLD_PCT)); then
+
+  local trigger=""
+  if ((MEM_PCT < THRESHOLD_PCT)); then
+    trigger="mem"
+  elif psi_under_pressure; then
+    trigger="psi"
+  fi
+
+  if [[ -z "$trigger" ]]; then
     exit 0
   fi
   if in_quiet_window; then
     exit 0
   fi
-  fire_alert
+  fire_alert "$trigger"
+}
+
+# ---------------------------------------------------------------- analytical views
+why_view() {
+  read_memory
+  declare -A APP_RSS APP_COUNT APP_EMOJI APP_DESC APP_CAT
+  local APP_SORTED=""
+  build_app_table
+
+  local severity
+  severity=$(severity_emoji "$MEM_PCT")
+  printf '%s Memory: %d%% available · %d MB free of %d MB\n\n' \
+    "$severity" "$MEM_PCT" "$((MEM_AVAIL_KB / 1024))" "$((MEM_TOTAL_KB / 1024))"
+
+  # PSI summary (if available)
+  if [[ -r /proc/pressure/memory ]]; then
+    local psi
+    psi=$(read_psi_avg10)
+    local label="negligible"
+    if awk -v p="$psi" 'BEGIN{exit !(p > 10.0)}'; then
+      label="HIGH · kernel actively stalling on memory"
+    elif awk -v p="$psi" 'BEGIN{exit !(p > 5.0)}'; then
+      label="noticeable"
+    fi
+    printf 'Kernel pressure (some avg10): %s%% · %s\n\n' "$psi" "$label"
+  fi
+
+  printf 'Top apps by total memory · what you would free by closing each:\n\n'
+
+  local count=0 chrome_tabs=-1 rss name mb pct_of_total new_avail_pct count_str tab_str
+  while IFS=$'\t' read -r rss name; do
+    ((count >= 8)) && break
+    [[ -z "$name" ]] && continue
+
+    mb=$((rss / 1024))
+    pct_of_total=$((rss * 100 / MEM_TOTAL_KB))
+    new_avail_pct=$(((MEM_AVAIL_KB + rss) * 100 / MEM_TOTAL_KB))
+
+    count_str=""
+    if ((${APP_COUNT[$name]:-1} > 1)); then
+      count_str=" · ${APP_COUNT[$name]} processes"
+    fi
+
+    tab_str=""
+    if [[ "$name" == "Chrome" || "$name" == "Chromium" || "$name" == "Brave" ]]; then
+      if ((chrome_tabs < 0)); then chrome_tabs=$(count_chrome_tabs); fi
+      if ((chrome_tabs > 0)); then
+        tab_str=" · ~$chrome_tabs tabs"
+      fi
+    fi
+
+    printf '  %s %s · %s · %d%% of total RAM%s%s\n' \
+      "${APP_EMOJI[$name]}" "$name" "$(format_size "$rss")" "$pct_of_total" "$count_str" "$tab_str"
+    printf '     → closing frees %s · would push you to %d%% available\n' \
+      "$(format_size "$rss")" "$new_avail_pct"
+    printf '     %s\n\n' "${APP_DESC[$name]}"
+
+    count=$((count + 1))
+  done <<<"$APP_SORTED"
+}
+
+stats_view() {
+  local days=${1:-7}
+  printf 'ram-rescue stats · last %d days\n\n' "$days"
+
+  # Pipelines below tolerate empty input (grep -c, grep -o on no matches return 1).
+  # Disable pipefail for the duration of this function.
+  set +o pipefail
+
+  local lines
+  lines=$(journalctl --user -t ram-rescue --since "$days days ago" --no-pager --output=short 2>/dev/null || true)
+
+  if [[ -z "$lines" ]]; then
+    echo "No log entries found. (Has ram-rescue ever fired in this window?)"
+    set -o pipefail
+    return
+  fi
+
+  # Count alerts per day. journalctl --output=short emits "MMM DD HH:MM:SS ..." → group by $1 $2.
+  printf 'Alerts per day:\n'
+  printf '%s\n' "$lines" |
+    awk '/alert (trigger=|pct=)/ { counts[$1 " " $2]++ }
+         END { for (d in counts) printf "  %s: %d\n", d, counts[d] }' |
+    sort
+  echo ""
+
+  # Most-frequent flagged apps (from "top=APP1,APP2,APP3" field on alert lines).
+  printf 'Most-frequently-flagged apps:\n'
+  local top_apps_summary
+  top_apps_summary=$(printf '%s\n' "$lines" |
+    grep -oE 'top=[^ ]+' |
+    sed 's/top=//' |
+    tr ',' '\n' |
+    awk 'NF' |
+    sort | uniq -c | sort -rn | head -5 |
+    awk '{$1=$1; printf "  %-25s × %d\n", $2, $1}')
+  if [[ -n "$top_apps_summary" ]]; then
+    echo "$top_apps_summary"
+  else
+    echo "  (no top= field in logs yet — alerts before v0.5.0 didn't record this)"
+  fi
+  echo ""
+
+  # User actions on alerts.
+  printf 'Alert outcomes:\n'
+  local actions_summary
+  actions_summary=$(printf '%s\n' "$lines" |
+    grep -oE 'action=[a-z]+' |
+    sed 's/action=//' |
+    sort | uniq -c | sort -rn |
+    awk '{printf "  %-15s × %d\n", $2, $1}')
+  if [[ -n "$actions_summary" ]]; then
+    echo "$actions_summary"
+  else
+    echo "  (none)"
+  fi
+  echo ""
+
+  # OOM-killer events surfaced.
+  local oom_count
+  oom_count=$(printf '%s\n' "$lines" | grep -c 'oom-postmortem')
+  printf 'Kernel OOM events surfaced: %d\n' "$oom_count"
+
+  set -o pipefail
 }
 
 case "${1:-}" in
@@ -187,20 +368,26 @@ case "${1:-}" in
       "$severity" "$MEM_PCT" "$((MEM_AVAIL_KB / 1024))" "$((MEM_TOTAL_KB / 1024))"
     top_apps
     ;;
+  --why) why_view ;;
+  --stats) shift; stats_view "${1:-7}" ;;
   --help)
     cat <<'EOF'
 ram-rescue — low-memory alerter for Linux desktops.
 
 Invoked periodically by the ram-rescue.timer systemd-user unit. Reads
-/proc/meminfo and fires a desktop notification when MemAvailable drops
-below the configured threshold.
+/proc/meminfo and /proc/pressure/memory; fires a desktop notification
+when MemAvailable drops below the configured threshold OR when PSI
+indicates the kernel is stalling on memory. Also watches journald for
+OOM-killer events and surfaces those as post-mortem notifications.
 
-Use `ram-rescue` (the CLI) for status, test, apps, overlay, etc.
+Use `ram-rescue` (the CLI) for status, test, apps, overlay, why, stats.
 
 Flags:
-  --apps      Print the grouped top-apps view to stdout (no notification)
-  --version   Print version
-  --help      This message
+  --apps        Print the grouped top-apps view to stdout (no notification)
+  --why         Analytical view: "closing X frees Y" + PSI summary
+  --stats [N]   Show stats from the last N days (default 7)
+  --version     Print version
+  --help        This message
 
 Env vars:
   MEMAVAILABLE_OVERRIDE=<kB>   force a low-memory condition for testing

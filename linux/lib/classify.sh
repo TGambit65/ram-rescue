@@ -154,3 +154,66 @@ format_size() {
     echo "${mb} MB"
   fi
 }
+
+# ---------------------------------------------------------------- PSI (memory pressure)
+# Reads `some avg10` from /proc/pressure/memory. Empty string if PSI unavailable.
+# PSI measures % of wall time at least one task stalled on memory in the window.
+read_psi_avg10() {
+  [[ -r /proc/pressure/memory ]] || { echo ""; return 0; }
+  awk '
+    /^some/ {
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^avg10=/) {
+          split($i, a, "=")
+          print a[2]
+          exit
+        }
+      }
+    }
+  ' /proc/pressure/memory
+}
+
+# Returns 0 (true) if PSI avg10 exceeds PSI_AVG10_THRESHOLD (default 10.0).
+# Returns 1 (false) if PSI unavailable, threshold disabled (0), or below threshold.
+psi_under_pressure() {
+  local threshold="${PSI_AVG10_THRESHOLD:-10.0}"
+  # Disabled if set to 0.
+  awk -v t="$threshold" 'BEGIN{exit !(t > 0)}' || return 1
+  local psi
+  psi=$(read_psi_avg10)
+  [[ -z "$psi" ]] && return 1
+  awk -v p="$psi" -v t="$threshold" 'BEGIN{exit !(p > t)}'
+}
+
+# ---------------------------------------------------------------- OOM-killer events
+# Scans journald for kernel oom-kill events since the last check.
+# Writes new events (one per line) to stdout. Updates the state file with the
+# current epoch so subsequent calls only see *new* events.
+# State file: $1 (defaults to $STATE_DIR/last-oom-check).
+recent_oom_kills() {
+  local state_file="${1:-${STATE_DIR:-$HOME/.local/state/ram-rescue}/last-oom-check}"
+  mkdir -p "$(dirname "$state_file")"
+  local last_ts now
+  now=$(date +%s)
+  if [[ -f "$state_file" ]]; then
+    last_ts=$(<"$state_file")
+  else
+    # First run: look back only 5 minutes to avoid notifying about stale events.
+    last_ts=$((now - 300))
+  fi
+
+  # journalctl --since accepts @<epoch>. Match oom-killer / oom-reaper / killed-process lines.
+  journalctl -k --since "@$last_ts" --no-pager 2>/dev/null |
+    grep -iE 'killed process|out of memory|oom-kill|oom_reap' || true
+
+  echo "$now" >"$state_file"
+}
+
+# Extracts the victim process name from an OOM journald line.
+# Input lines look like: "... Out of memory: Killed process 12345 (firefox) ..."
+oom_extract_victim() {
+  awk '
+    match($0, /[Kk]illed process [0-9]+ \(([^)]+)\)/, m) { print m[1]; exit }
+    match($0, /Memory cgroup out of memory: [^,]+, [^:]*: ([^ ]+)/, m) { print m[1]; exit }
+  '
+}
